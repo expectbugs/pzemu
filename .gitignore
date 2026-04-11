@@ -5,20 +5,24 @@ emuplan.md
 reference.md
 
 # Downloaded reference files (fetched during research, not for distribution)
-libretro.h
+/libretro.h
 
 # Build artifacts
 bridge/pzemu-bridge
 bridge/pzemu-bridge.exe
+bridge/pzemu-bridge-dbg
 bridge/*.o
 bridge/*.d
 
 # Libretro cores (user-provided, not redistributable)
-cores/*.so
-cores/*.dll
+cores/
+*.zip
 
-# ROMs (user-provided)
-roms/
+# ROMs (user-provided, NOT for distribution — project root only)
+/roms/
+
+# Packaged .dat files in mod (built from source, not checked in)
+mod/PZEMU/42/media/pzemu/*.dat
 
 # OS junk
 .DS_Store

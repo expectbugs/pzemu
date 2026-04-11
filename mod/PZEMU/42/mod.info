@@ -1,0 +1,8 @@
+name=PZEMU - NES Emulation
+id=PZEMU
+require=PZFB
+description=Play NES games on in-game TVs. Right-click any TV and select Play NES.
+poster=poster.png
+icon=icon.png
+modversion=0.1.0
+versionMin=42.0
