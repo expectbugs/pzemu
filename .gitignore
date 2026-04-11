@@ -1,0 +1,23 @@
+# Development notes (private, not for distribution)
+CLAUDE.md
+AVOID.md
+emuplan.md
+
+# Build artifacts
+bridge/pzemu-bridge
+bridge/pzemu-bridge.exe
+bridge/*.o
+bridge/*.d
+
+# Libretro cores (user-provided, not redistributable)
+cores/*.so
+cores/*.dll
+
+# ROMs (user-provided)
+roms/
+
+# OS junk
+.DS_Store
+Thumbs.db
+*.swp
+*~
