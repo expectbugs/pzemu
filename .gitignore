@@ -2,6 +2,10 @@
 CLAUDE.md
 AVOID.md
 emuplan.md
+reference.md
+
+# Downloaded reference files (fetched during research, not for distribution)
+libretro.h
 
 # Build artifacts
 bridge/pzemu-bridge
