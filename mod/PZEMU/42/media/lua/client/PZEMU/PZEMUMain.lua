@@ -1,7 +1,7 @@
 --
 -- PZEMUMain.lua — Entry point, context menu hook for TV right-click
 --
--- Adds "Play NES" option when right-clicking a TV (IsoWaveSignal without RadioItemID).
+-- Adds "Play Console" option when right-clicking a TV (IsoWaveSignal without RadioItemID).
 -- Requires PZFB mod for framebuffer rendering and game process management.
 --
 
@@ -29,7 +29,7 @@ Events.OnFillWorldObjectContextMenu.Add(function(player, context, worldobjects, 
         if instanceof(object, "IsoWaveSignal") and object:getSprite()
            and not object:getModData().RadioItemID then
             local playerObj = getSpecificPlayer(player)
-            context:addOption("Play NES", playerObj, PZEMUMain.openEmulator)
+            context:addOption("Play Console", playerObj, PZEMUMain.openEmulator)
             return
         end
     end

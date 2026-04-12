@@ -224,15 +224,11 @@ static bool RETRO_CALLCONV environment_cb(unsigned cmd, void *data) {
         if (data) *(const char **)data = g_save_dir;
         return true;
 
-    case 37: { /* RETRO_ENVIRONMENT_SET_GEOMETRY */
-        if (!data) return true;
-        const struct retro_game_geometry *geom = (const struct retro_game_geometry *)data;
-        if (geom->base_width > 0 && geom->base_height > 0) {
-            g_frame_width  = geom->base_width;
-            g_frame_height = geom->base_height;
-        }
+    case 37: /* RETRO_ENVIRONMENT_SET_GEOMETRY */
+        /* Acknowledge but don't change output dimensions — they must match
+         * the Java ring buffer size set at launch. The video_refresh_cb
+         * centers/pads smaller frames within the fixed output dimensions. */
         return true;
-    }
 
     case 51: /* RETRO_ENVIRONMENT_GET_INPUT_BITMASKS */
         if (data) *(bool *)data = true;
@@ -259,11 +255,21 @@ static void RETRO_CALLCONV video_refresh_cb(const void *data,
         g_rgba_buf_size = needed;
     }
 
+    /* Zero-fill buffer first — handles padding when core frame is smaller
+     * than output dimensions (e.g. Genesis starts 256x192, output is 320x224) */
+    memset(g_rgba_buf, 0, needed);
+
+    /* Center the core's frame within the output dimensions */
+    unsigned off_x = (width < g_frame_width) ? (g_frame_width - width) / 2 : 0;
+    unsigned off_y = (height < g_frame_height) ? (g_frame_height - height) / 2 : 0;
+    unsigned copy_w = (width < g_frame_width) ? width : g_frame_width;
+    unsigned copy_h = (height < g_frame_height) ? height : g_frame_height;
+
     /* convert pixel data row-by-row, respecting pitch (bytes per row, NOT width*bpp) */
-    for (unsigned y = 0; y < height && y < g_frame_height; y++) {
+    for (unsigned y = 0; y < copy_h; y++) {
         const uint8_t *src_row = (const uint8_t *)data + y * pitch;
-        uint8_t *dst_row = g_rgba_buf + y * g_frame_width * 4;
-        unsigned w = (width < g_frame_width) ? width : g_frame_width;
+        uint8_t *dst_row = g_rgba_buf + (y + off_y) * g_frame_width * 4 + off_x * 4;
+        unsigned w = copy_w;
 
         switch (g_pixel_format) {
         case RETRO_PIXEL_FORMAT_XRGB8888:
@@ -716,14 +722,13 @@ int main(int argc, char *argv[]) {
     struct retro_system_av_info av_info = {0};
     p_retro_get_system_av_info(&av_info);
 
-    /* Use the core's actual geometry for frame output.
-     * The CLI width/height are hints only — the core's geometry is authoritative.
-     * The Lua side MUST pass matching values to PZFB.gameStart(). */
-    if (av_info.geometry.base_width > 0 && av_info.geometry.base_height > 0) {
-        g_frame_width  = av_info.geometry.base_width;
-        g_frame_height = av_info.geometry.base_height;
-    }
-    fprintf(stderr, "[pzemu] Geometry: %ux%u, FPS: %.2f, Sample rate: %.0f\n",
+    /* CLI width/height are the output frame size (must match Java ring buffer).
+     * Core may report different base geometry (e.g. Genesis starts 256x192 but
+     * switches to 320x224). We KEEP CLI dimensions and pad/center if the core's
+     * frame is smaller. SET_GEOMETRY callbacks are noted but don't change output. */
+    fprintf(stderr, "[pzemu] Core geometry: %ux%u (max %ux%u), Output: %ux%u, FPS: %.2f, Sample rate: %.0f\n",
+            av_info.geometry.base_width, av_info.geometry.base_height,
+            av_info.geometry.max_width, av_info.geometry.max_height,
             g_frame_width, g_frame_height,
             av_info.timing.fps, av_info.timing.sample_rate);
 

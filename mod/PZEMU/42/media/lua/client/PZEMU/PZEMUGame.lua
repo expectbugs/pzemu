@@ -1,18 +1,16 @@
 --
--- PZEMUGame.lua — Process management, key translation, binary deployment, ROM scanning
+-- PZEMUGame.lua — Multi-console process management, key translation, ROM scanning
 --
 -- Manages the pzemu-bridge process via PZFB's game process API.
--- Translates LWJGL key codes to libretro button IDs before sending.
+-- Console-specific configuration (resolution, core, key map) is driven by a
+-- CONSOLES table. The bridge binary is fully generic — this file provides
+-- the per-console knowledge.
 --
 
 require "PZFB/PZFBApi"
 
 PZEMUGame = {}
 PZEMUGame.__index = PZEMUGame
-
--- FCEUmm outputs 256x224 (NTSC with standard 8-line top/bottom clipping)
-PZEMUGame.NES_WIDTH  = 256
-PZEMUGame.NES_HEIGHT = 224
 
 -- ---------- platform helpers ----------
 
@@ -24,26 +22,249 @@ local function getUserDir()
     return Core.getMyDocumentFolder() .. getFileSeparator() .. "PZEMU"
 end
 
--- ---------- NES key map: LWJGL key code → RETRO_DEVICE_ID_JOYPAD_* ----------
--- Button IDs 0-15 are standard libretro joypad buttons.
--- IDs 16+ are meta-commands handled by the bridge (not sent to the core).
+-- ---------- shared meta-commands (same for all consoles) ----------
 
-local NES_KEY_MAP = {}
--- Primary layout (Z/X + Arrows)
-NES_KEY_MAP[Keyboard.KEY_Z]      = 0   -- B (south face)
-NES_KEY_MAP[Keyboard.KEY_X]      = 8   -- A (east face)
--- Alternative layout (A/S + Arrows) — avoids keyboard ghosting with Z/X + arrows
-NES_KEY_MAP[Keyboard.KEY_A]      = 0   -- B (alternate)
-NES_KEY_MAP[Keyboard.KEY_S]      = 8   -- A (alternate)
-NES_KEY_MAP[Keyboard.KEY_RSHIFT] = 2   -- SELECT
-NES_KEY_MAP[Keyboard.KEY_RETURN] = 3   -- START
-NES_KEY_MAP[Keyboard.KEY_UP]     = 4   -- D-pad UP
-NES_KEY_MAP[Keyboard.KEY_DOWN]   = 5   -- D-pad DOWN
-NES_KEY_MAP[Keyboard.KEY_LEFT]   = 6   -- D-pad LEFT
-NES_KEY_MAP[Keyboard.KEY_RIGHT]  = 7   -- D-pad RIGHT
-NES_KEY_MAP[Keyboard.KEY_ESCAPE] = 18  -- ESC → freeze emulation (meta-command)
-NES_KEY_MAP[Keyboard.KEY_F5]     = 16  -- Save state (meta-command)
-NES_KEY_MAP[Keyboard.KEY_F7]     = 17  -- Load state (meta-command)
+local META_KEYS = {}
+META_KEYS[Keyboard.KEY_ESCAPE] = 18  -- Freeze/unfreeze emulation
+META_KEYS[Keyboard.KEY_F5]     = 16  -- Save state
+META_KEYS[Keyboard.KEY_F7]     = 17  -- Load state
+
+-- ---------- per-console key map builders ----------
+
+local function buildKeyMap(buttonMap)
+    -- Merge console-specific button map with shared meta-commands
+    local map = {}
+    for k, v in pairs(buttonMap) do map[k] = v end
+    for k, v in pairs(META_KEYS) do map[k] = v end
+    return map
+end
+
+-- NES: 8 buttons — D-pad, B, A, Start, Select
+local NES_BUTTONS = {}
+NES_BUTTONS[Keyboard.KEY_Z]      = 0   -- B
+NES_BUTTONS[Keyboard.KEY_A]      = 0   -- B (alt — avoids ghosting with arrows)
+NES_BUTTONS[Keyboard.KEY_X]      = 8   -- A
+NES_BUTTONS[Keyboard.KEY_S]      = 8   -- A (alt)
+NES_BUTTONS[Keyboard.KEY_RSHIFT] = 2   -- SELECT
+NES_BUTTONS[Keyboard.KEY_RETURN] = 3   -- START
+NES_BUTTONS[Keyboard.KEY_UP]     = 4
+NES_BUTTONS[Keyboard.KEY_DOWN]   = 5
+NES_BUTTONS[Keyboard.KEY_LEFT]   = 6
+NES_BUTTONS[Keyboard.KEY_RIGHT]  = 7
+
+-- SNES: 12 buttons — adds Y, X, L, R to NES layout
+local SNES_BUTTONS = {}
+SNES_BUTTONS[Keyboard.KEY_Z]      = 0   -- B
+SNES_BUTTONS[Keyboard.KEY_A]      = 0   -- B (alt)
+SNES_BUTTONS[Keyboard.KEY_X]      = 8   -- A
+SNES_BUTTONS[Keyboard.KEY_S]      = 8   -- A (alt)
+SNES_BUTTONS[Keyboard.KEY_C]      = 1   -- Y
+SNES_BUTTONS[Keyboard.KEY_D]      = 1   -- Y (alt)
+SNES_BUTTONS[Keyboard.KEY_V]      = 9   -- X
+SNES_BUTTONS[Keyboard.KEY_F]      = 9   -- X (alt)
+SNES_BUTTONS[Keyboard.KEY_Q]      = 10  -- L shoulder
+SNES_BUTTONS[Keyboard.KEY_E]      = 11  -- R shoulder
+SNES_BUTTONS[Keyboard.KEY_RSHIFT] = 2   -- SELECT
+SNES_BUTTONS[Keyboard.KEY_RETURN] = 3   -- START
+SNES_BUTTONS[Keyboard.KEY_UP]     = 4
+SNES_BUTTONS[Keyboard.KEY_DOWN]   = 5
+SNES_BUTTONS[Keyboard.KEY_LEFT]   = 6
+SNES_BUTTONS[Keyboard.KEY_RIGHT]  = 7
+
+-- Genesis 6-button: libretro maps Genesis A=Y(1), B=B(0), C=A(8)
+-- 6-button adds: X=L(10), Y=X(9), Z=R(11)
+local GENESIS_BUTTONS = {}
+GENESIS_BUTTONS[Keyboard.KEY_Z]      = 1   -- Genesis A (libretro Y)
+GENESIS_BUTTONS[Keyboard.KEY_A]      = 1   -- Genesis A (alt)
+GENESIS_BUTTONS[Keyboard.KEY_X]      = 0   -- Genesis B (libretro B)
+GENESIS_BUTTONS[Keyboard.KEY_S]      = 0   -- Genesis B (alt)
+GENESIS_BUTTONS[Keyboard.KEY_C]      = 8   -- Genesis C (libretro A)
+GENESIS_BUTTONS[Keyboard.KEY_D]      = 8   -- Genesis C (alt)
+GENESIS_BUTTONS[Keyboard.KEY_Q]      = 10  -- Genesis X (libretro L) — 6-button
+GENESIS_BUTTONS[Keyboard.KEY_W]      = 9   -- Genesis Y (libretro X) — 6-button
+GENESIS_BUTTONS[Keyboard.KEY_E]      = 11  -- Genesis Z (libretro R) — 6-button
+GENESIS_BUTTONS[Keyboard.KEY_RETURN] = 3   -- START
+GENESIS_BUTTONS[Keyboard.KEY_UP]     = 4
+GENESIS_BUTTONS[Keyboard.KEY_DOWN]   = 5
+GENESIS_BUTTONS[Keyboard.KEY_LEFT]   = 6
+GENESIS_BUTTONS[Keyboard.KEY_RIGHT]  = 7
+
+-- Game Boy: same as NES (D-pad, B, A, Start, Select)
+local GB_BUTTONS = NES_BUTTONS
+
+-- Atari 2600: minimal — fire, select, reset + D-pad
+local ATARI2600_BUTTONS = {}
+ATARI2600_BUTTONS[Keyboard.KEY_Z]      = 0   -- Fire
+ATARI2600_BUTTONS[Keyboard.KEY_A]      = 0   -- Fire (alt)
+ATARI2600_BUTTONS[Keyboard.KEY_X]      = 8   -- Fire 2 (paddle games)
+ATARI2600_BUTTONS[Keyboard.KEY_S]      = 8   -- Fire 2 (alt)
+ATARI2600_BUTTONS[Keyboard.KEY_RSHIFT] = 2   -- Game Select
+ATARI2600_BUTTONS[Keyboard.KEY_RETURN] = 3   -- Game Reset
+ATARI2600_BUTTONS[Keyboard.KEY_UP]     = 4
+ATARI2600_BUTTONS[Keyboard.KEY_DOWN]   = 5
+ATARI2600_BUTTONS[Keyboard.KEY_LEFT]   = 6
+ATARI2600_BUTTONS[Keyboard.KEY_RIGHT]  = 7
+
+-- Game Gear: D-pad, Button 1, Button 2, Start
+local GG_BUTTONS = {}
+GG_BUTTONS[Keyboard.KEY_Z]      = 0   -- Button 1
+GG_BUTTONS[Keyboard.KEY_A]      = 0   -- Button 1 (alt)
+GG_BUTTONS[Keyboard.KEY_X]      = 8   -- Button 2
+GG_BUTTONS[Keyboard.KEY_S]      = 8   -- Button 2 (alt)
+GG_BUTTONS[Keyboard.KEY_RETURN] = 3   -- START
+GG_BUTTONS[Keyboard.KEY_UP]     = 4
+GG_BUTTONS[Keyboard.KEY_DOWN]   = 5
+GG_BUTTONS[Keyboard.KEY_LEFT]   = 6
+GG_BUTTONS[Keyboard.KEY_RIGHT]  = 7
+
+-- Master System: D-pad, Button 1, Button 2
+local SMS_BUTTONS = {}
+SMS_BUTTONS[Keyboard.KEY_Z]      = 0   -- Button 1
+SMS_BUTTONS[Keyboard.KEY_A]      = 0   -- Button 1 (alt)
+SMS_BUTTONS[Keyboard.KEY_X]      = 8   -- Button 2
+SMS_BUTTONS[Keyboard.KEY_S]      = 8   -- Button 2 (alt)
+SMS_BUTTONS[Keyboard.KEY_RETURN] = 3   -- Pause
+SMS_BUTTONS[Keyboard.KEY_UP]     = 4
+SMS_BUTTONS[Keyboard.KEY_DOWN]   = 5
+SMS_BUTTONS[Keyboard.KEY_LEFT]   = 6
+SMS_BUTTONS[Keyboard.KEY_RIGHT]  = 7
+
+-- ---------- console specifications ----------
+-- Resolutions verified against actual core output via standalone bridge testing.
+-- The bridge outputs at these fixed dimensions; if the core's frame is smaller
+-- (e.g. Genesis starts 256x192), the bridge centers and pads with black.
+
+local CONSOLES = {
+    {
+        id            = "nes",
+        displayName   = "NES",
+        year          = 1985,
+        width         = 256,
+        height        = 224,
+        coreFile      = "fceumm_libretro",
+        coreDat       = "fceumm_libretro.dat",
+        romDir        = "nes",
+        romExtensions = { ".nes" },
+        keyMap        = buildKeyMap(NES_BUTTONS),
+        controlHints  = {
+            "Arrows  =  D-pad",
+            "Z or A  =  B button",
+            "X or S  =  A button",
+            "Enter  =  Start",
+            "Right Shift  =  Select",
+        },
+    },
+    {
+        id            = "snes",
+        displayName   = "SNES",
+        year          = 1991,
+        width         = 256,
+        height        = 224,
+        coreFile      = "snes9x_libretro",
+        coreDat       = "snes9x_libretro.dat",
+        romDir        = "snes",
+        romExtensions = { ".smc", ".sfc" },
+        keyMap        = buildKeyMap(SNES_BUTTONS),
+        controlHints  = {
+            "Arrows  =  D-pad",
+            "Z or A  =  B       X or S  =  A",
+            "C or D  =  Y       V or F  =  X",
+            "Q  =  L shoulder   E  =  R shoulder",
+            "Enter  =  Start    RShift  =  Select",
+        },
+    },
+    {
+        id            = "genesis",
+        displayName   = "Sega Genesis",
+        year          = 1989,
+        width         = 320,
+        height        = 224,
+        coreFile      = "genesis_plus_gx_libretro",
+        coreDat       = "genesis_plus_gx_libretro.dat",
+        romDir        = "genesis",
+        romExtensions = { ".md", ".gen", ".bin", ".smd" },
+        keyMap        = buildKeyMap(GENESIS_BUTTONS),
+        controlHints  = {
+            "Arrows  =  D-pad",
+            "Z or A  =  A       X or S  =  B       C or D  =  C",
+            "Q  =  X   W  =  Y   E  =  Z  (6-button)",
+            "Enter  =  Start",
+        },
+    },
+    {
+        id            = "gb",
+        displayName   = "Game Boy",
+        year          = 1989,
+        width         = 160,
+        height        = 144,
+        coreFile      = "gambatte_libretro",
+        coreDat       = "gambatte_libretro.dat",
+        romDir        = "gb",
+        romExtensions = { ".gb" },
+        keyMap        = buildKeyMap(GB_BUTTONS),
+        controlHints  = {
+            "Arrows  =  D-pad",
+            "Z or A  =  B button",
+            "X or S  =  A button",
+            "Enter  =  Start",
+            "Right Shift  =  Select",
+        },
+    },
+    {
+        id            = "atari2600",
+        displayName   = "Atari 2600",
+        year          = 1977,
+        width         = 320,
+        height        = 228,
+        coreFile      = "stella_libretro",
+        coreDat       = "stella_libretro.dat",
+        romDir        = "atari2600",
+        romExtensions = { ".a26", ".bin" },
+        keyMap        = buildKeyMap(ATARI2600_BUTTONS),
+        controlHints  = {
+            "Arrows  =  Joystick",
+            "Z or A  =  Fire",
+            "Enter  =  Game Reset",
+            "Right Shift  =  Game Select",
+        },
+    },
+    {
+        id            = "gg",
+        displayName   = "Game Gear",
+        year          = 1991,
+        width         = 160,
+        height        = 144,
+        coreFile      = "genesis_plus_gx_libretro",
+        coreDat       = "genesis_plus_gx_libretro.dat",
+        romDir        = "gg",
+        romExtensions = { ".gg" },
+        keyMap        = buildKeyMap(GG_BUTTONS),
+        controlHints  = {
+            "Arrows  =  D-pad",
+            "Z or A  =  Button 1",
+            "X or S  =  Button 2",
+            "Enter  =  Start",
+        },
+    },
+    {
+        id            = "sms",
+        displayName   = "Master System",
+        year          = 1986,
+        width         = 256,
+        height        = 192,
+        coreFile      = "genesis_plus_gx_libretro",
+        coreDat       = "genesis_plus_gx_libretro.dat",
+        romDir        = "sms",
+        romExtensions = { ".sms" },
+        keyMap        = buildKeyMap(SMS_BUTTONS),
+        controlHints  = {
+            "Arrows  =  D-pad",
+            "Z or A  =  Button 1",
+            "X or S  =  Button 2",
+            "Enter  =  Pause",
+        },
+    },
+}
 
 -- ---------- .dat file path resolution (handles Workshop vs local) ----------
 
@@ -54,10 +275,8 @@ local function findModDat(filename)
 
     local dir = modInfo:getDir()
     if dir then
-        -- Try: dir/media/pzemu/filename
         local p = dir .. sep .. "media" .. sep .. "pzemu" .. sep .. filename
         if PZFB.fileSize(p) > 0 then return p end
-        -- Try: dir/42/media/pzemu/filename
         p = dir .. sep .. "42" .. sep .. "media" .. sep .. "pzemu" .. sep .. filename
         if PZFB.fileSize(p) > 0 then return p end
     end
@@ -76,27 +295,31 @@ local function deployBinaries()
     local sep = getFileSeparator()
     local destDir = getUserDir()
 
-    local files
-    if isWindows() then
-        files = {
-            { dat = "pzemu-bridge_win.dat", dest = "pzemu-bridge.exe" },
-            { dat = "SDL2.dat",             dest = "SDL2.dll" },
-            { dat = "fceumm_libretro.dat",  dest = "fceumm_libretro.dll" },
-        }
-    else
-        files = {
-            { dat = "pzemu-bridge.dat",     dest = "pzemu-bridge" },
-            { dat = "fceumm_libretro.dat",  dest = "fceumm_libretro.so" },
-        }
+    -- Deploy bridge binary
+    local bridgeDat = isWindows() and "pzemu-bridge_win.dat" or "pzemu-bridge.dat"
+    local bridgeDest = isWindows() and "pzemu-bridge.exe" or "pzemu-bridge"
+    local bridgePath = destDir .. sep .. bridgeDest
+    if PZFB.fileSize(bridgePath) <= 0 then
+        local src = findModDat(bridgeDat)
+        if src then
+            print("[PZEMU] Deploying " .. bridgeDat .. " -> " .. bridgePath)
+            PZFB.copyFile(src, bridgePath)
+        end
     end
 
-    for _, f in ipairs(files) do
-        local destPath = destDir .. sep .. f.dest
-        if PZFB.fileSize(destPath) <= 0 then
-            local srcPath = findModDat(f.dat)
-            if srcPath then
-                print("[PZEMU] Deploying " .. f.dat .. " -> " .. destPath)
-                PZFB.copyFile(srcPath, destPath)
+    -- Deploy all cores (skip duplicates — genesis_plus_gx is shared)
+    local deployed = {}
+    for _, console in ipairs(CONSOLES) do
+        if not deployed[console.coreDat] then
+            deployed[console.coreDat] = true
+            local ext = isWindows() and ".dll" or ".so"
+            local coreDest = destDir .. sep .. console.coreFile .. ext
+            if PZFB.fileSize(coreDest) <= 0 then
+                local src = findModDat(console.coreDat)
+                if src then
+                    print("[PZEMU] Deploying " .. console.coreDat .. " -> " .. coreDest)
+                    PZFB.copyFile(src, coreDest)
+                end
             end
         end
     end
@@ -104,13 +327,23 @@ end
 
 -- ---------- ROM scanning ----------
 
-local function scanDir(dirPath, results, seen)
+local function matchesExtension(filename, extensions)
+    local lower = string.lower(filename)
+    for _, ext in ipairs(extensions) do
+        if string.sub(lower, -(#ext)) == ext then
+            return true
+        end
+    end
+    return false
+end
+
+local function scanDir(dirPath, extensions, results, seen)
     local listing = PZFB.listDir(dirPath)
     if not listing or listing == "" then return end
     local sep = getFileSeparator()
     for line in string.gmatch(listing, "[^\n]+") do
         local lower = string.lower(line)
-        if string.sub(lower, -4) == ".nes" and not seen[lower] then
+        if matchesExtension(line, extensions) and not seen[lower] then
             seen[lower] = true
             table.insert(results, {
                 name = line,
@@ -120,7 +353,7 @@ local function scanDir(dirPath, results, seen)
     end
 end
 
-function PZEMUGame.findRoms()
+function PZEMUGame.findRoms(console)
     local sep = getFileSeparator()
     local results = {}
     local seen = {}
@@ -130,33 +363,40 @@ function PZEMUGame.findRoms()
     if modInfo then
         local dir = modInfo:getDir()
         if dir then
-            scanDir(dir .. sep .. "media" .. sep .. "pzemu" .. sep .. "roms" .. sep .. "nes", results, seen)
-            scanDir(dir .. sep .. "42" .. sep .. "media" .. sep .. "pzemu" .. sep .. "roms" .. sep .. "nes", results, seen)
+            scanDir(dir .. sep .. "media" .. sep .. "pzemu" .. sep .. "roms" .. sep .. console.romDir, console.romExtensions, results, seen)
+            scanDir(dir .. sep .. "42" .. sep .. "media" .. sep .. "pzemu" .. sep .. "roms" .. sep .. console.romDir, console.romExtensions, results, seen)
         end
         local ok, vdir = pcall(function() return modInfo:getVersionDir() end)
         if ok and vdir then
-            scanDir(vdir .. sep .. "media" .. sep .. "pzemu" .. sep .. "roms" .. sep .. "nes", results, seen)
+            scanDir(vdir .. sep .. "media" .. sep .. "pzemu" .. sep .. "roms" .. sep .. console.romDir, console.romExtensions, results, seen)
         end
     end
 
-    -- User ROMs from ~/Zomboid/PZEMU/roms/nes/
-    scanDir(getUserDir() .. sep .. "roms" .. sep .. "nes", results, seen)
+    -- User ROMs from ~/Zomboid/PZEMU/roms/<system>/
+    scanDir(getUserDir() .. sep .. "roms" .. sep .. console.romDir, console.romExtensions, results, seen)
 
     return results
 end
 
+-- ---------- public: get consoles list ----------
+
+function PZEMUGame.getConsoles()
+    return CONSOLES
+end
+
 -- ---------- constructor ----------
 
-function PZEMUGame:new()
+function PZEMUGame:new(console)
     local o = setmetatable({}, PZEMUGame)
+    o.console = console
     o.state = "IDLE"
     o.errorMsg = nil
     o.fb = nil
     o.currentFrame = -1
     o.romPath = nil
-    o.keyMap = NES_KEY_MAP
+    o.keyMap = console.keyMap
 
-    -- Deploy binaries if needed
+    -- Deploy binaries if needed (first-time only, fast no-op after)
     deployBinaries()
 
     -- Locate bridge binary
@@ -169,9 +409,9 @@ function PZEMUGame:new()
         o.binaryPath = nil
     end
 
-    -- Locate NES core
-    local coreName = isWindows() and "fceumm_libretro.dll" or "fceumm_libretro.so"
-    local corePath = getUserDir() .. sep .. coreName
+    -- Locate core for this console
+    local ext = isWindows() and ".dll" or ".so"
+    local corePath = getUserDir() .. sep .. console.coreFile .. ext
     if PZFB.fileSize(corePath) > 0 then
         o.corePath = corePath
     else
@@ -202,7 +442,7 @@ function PZEMUGame:start(romPath)
         return
     end
     if not self.corePath then
-        self.errorMsg = "NES core not found"
+        self.errorMsg = self.console.displayName .. " core not found"
         self.state = "ERROR"
         return
     end
@@ -210,18 +450,21 @@ function PZEMUGame:start(romPath)
     self.romPath = romPath
     self.currentFrame = -1
 
+    local w = self.console.width
+    local h = self.console.height
+
     -- Create framebuffer (NEAREST filtering for pixel-perfect rendering)
-    self.fb = PZFB.create(PZEMUGame.NES_WIDTH, PZEMUGame.NES_HEIGHT)
+    self.fb = PZFB.create(w, h)
 
     -- Build extra args: core_path rom_path width height save_dir save_dir
     local sep = getFileSeparator()
-    local saveDir = getUserDir() .. sep .. "saves" .. sep .. "nes"
+    local saveDir = getUserDir() .. sep .. "saves" .. sep .. self.console.romDir
 
     local extraArgs = self.corePath .. " " .. romPath .. " "
-        .. tostring(PZEMUGame.NES_WIDTH) .. " " .. tostring(PZEMUGame.NES_HEIGHT)
+        .. tostring(w) .. " " .. tostring(h)
         .. " " .. saveDir .. " " .. saveDir
 
-    PZFB.gameStart(self.binaryPath, PZEMUGame.NES_WIDTH, PZEMUGame.NES_HEIGHT, extraArgs)
+    PZFB.gameStart(self.binaryPath, w, h, extraArgs)
     self.state = "STARTING"
     self.errorMsg = nil
 end
@@ -256,7 +499,6 @@ function PZEMUGame:update()
         return
     end
 
-    -- Transition: STARTING → RUNNING
     if self.state == "STARTING" and status >= 2 then
         self.state = "RUNNING"
     end
