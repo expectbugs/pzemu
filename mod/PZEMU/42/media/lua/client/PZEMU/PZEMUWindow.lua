@@ -44,9 +44,9 @@ end
 
 function PZEMUGamePanel:onPZFBCaptureToggle(active)
     if not active and self.game then
-        -- Send Start press/release to pause the game (NES Start = pause)
-        PZFB.gameSendInput(3, 1)
-        PZFB.gameSendInput(3, 0)
+        -- Freeze emulation when releasing capture (meta-command 18)
+        PZFB.gameSendInput(18, 1)
+        PZFB.gameSendInput(18, 0)
     end
 end
 
@@ -222,8 +222,10 @@ function PZEMUWelcome:render()
         "Enter  =  Start",
         "Right Shift  =  Select",
         "",
+        "ESC  =  Freeze / unfreeze emulation",
+        "F5  =  Save state",
+        "F9  =  Load state",
         "Scroll Lock  =  Lock/unlock input",
-        "ESC  =  Release input + pause",
     }
 
     for _, line in ipairs(controls) do

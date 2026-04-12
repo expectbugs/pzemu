@@ -25,6 +25,8 @@ local function getUserDir()
 end
 
 -- ---------- NES key map: LWJGL key code → RETRO_DEVICE_ID_JOYPAD_* ----------
+-- Button IDs 0-15 are standard libretro joypad buttons.
+-- IDs 16+ are meta-commands handled by the bridge (not sent to the core).
 
 local NES_KEY_MAP = {}
 NES_KEY_MAP[Keyboard.KEY_Z]      = 0   -- B (south face)
@@ -35,6 +37,9 @@ NES_KEY_MAP[Keyboard.KEY_UP]     = 4   -- D-pad UP
 NES_KEY_MAP[Keyboard.KEY_DOWN]   = 5   -- D-pad DOWN
 NES_KEY_MAP[Keyboard.KEY_LEFT]   = 6   -- D-pad LEFT
 NES_KEY_MAP[Keyboard.KEY_RIGHT]  = 7   -- D-pad RIGHT
+NES_KEY_MAP[Keyboard.KEY_ESCAPE] = 18  -- ESC → freeze emulation (meta-command)
+NES_KEY_MAP[Keyboard.KEY_F5]     = 16  -- Save state (meta-command)
+NES_KEY_MAP[Keyboard.KEY_F9]     = 17  -- Load state (meta-command)
 
 -- ---------- .dat file path resolution (handles Workshop vs local) ----------
 

@@ -110,6 +110,20 @@ static void     (*p_retro_set_audio_sample)(retro_audio_sample_t);
 static void     (*p_retro_set_audio_sample_batch)(retro_audio_sample_batch_t);
 static void     (*p_retro_set_input_poll)(retro_input_poll_t);
 static void     (*p_retro_set_input_state)(retro_input_state_t);
+static size_t   (*p_retro_serialize_size)(void);
+static bool     (*p_retro_serialize)(void *, size_t);
+static bool     (*p_retro_unserialize)(const void *, size_t);
+
+/* ---------- meta-command IDs (keycode >= 16, not sent to core) ---------- */
+#define META_SAVE_STATE  16
+#define META_LOAD_STATE  17
+#define META_PAUSE       18
+
+static bool g_paused = false;
+
+/* forward declarations for meta-command handlers */
+static void do_save_state(void);
+static void do_load_state(void);
 
 /* ---------- environment callback ---------- */
 
@@ -297,8 +311,22 @@ static void RETRO_CALLCONV video_refresh_cb(const void *data,
 /* ---------- input handling ---------- */
 
 static void handle_key_event(uint8_t pressed, uint8_t keycode) {
-    if (keycode < 16)
+    if (keycode < 16) {
         g_buttons[keycode] = pressed ? 1 : 0;
+    } else if (pressed) {
+        /* meta-commands — trigger on press only */
+        switch (keycode) {
+        case META_SAVE_STATE: do_save_state(); break;
+        case META_LOAD_STATE: do_load_state(); break;
+        case META_PAUSE:
+            g_paused = !g_paused;
+            if (g_audio_dev)
+                SDL_PauseAudioDevice(g_audio_dev, g_paused ? 1 : 0);
+            fprintf(stderr, "[pzemu] %s\n", g_paused ? "Paused" : "Resumed");
+            break;
+        default: break;
+        }
+    }
 }
 
 #ifdef _WIN32
@@ -471,6 +499,79 @@ static void save_sram(void) {
     }
 }
 
+/* ---------- save state persistence ---------- */
+
+static char g_state_path[4096] = {0};
+
+static void build_state_path(const char *rom_path, const char *save_dir) {
+    const char *slash = strrchr(rom_path, '/');
+#ifdef _WIN32
+    const char *bslash = strrchr(rom_path, '\\');
+    if (bslash && (!slash || bslash > slash)) slash = bslash;
+#endif
+    const char *basename = slash ? slash + 1 : rom_path;
+
+    char name[256];
+    strncpy(name, basename, sizeof(name) - 1);
+    name[sizeof(name) - 1] = '\0';
+
+    char *dot = strrchr(name, '.');
+    if (dot) *dot = '\0';
+
+    snprintf(g_state_path, sizeof(g_state_path), "%s/%s.state", save_dir, name);
+}
+
+static void do_save_state(void) {
+    size_t sz = p_retro_serialize_size();
+    if (sz == 0) {
+        fprintf(stderr, "[pzemu] Core does not support save states\n");
+        return;
+    }
+
+    void *buf = malloc(sz);
+    if (!buf) return;
+
+    if (p_retro_serialize(buf, sz)) {
+        ensure_directory(g_save_dir);
+        FILE *f = fopen(g_state_path, "wb");
+        if (f) {
+            fwrite(buf, 1, sz, f);
+            fclose(f);
+            fprintf(stderr, "[pzemu] Saved state to %s (%zu bytes)\n", g_state_path, sz);
+        } else {
+            fprintf(stderr, "[pzemu] Failed to save state to %s\n", g_state_path);
+        }
+    } else {
+        fprintf(stderr, "[pzemu] retro_serialize() failed\n");
+    }
+    free(buf);
+}
+
+static void do_load_state(void) {
+    FILE *f = fopen(g_state_path, "rb");
+    if (!f) {
+        fprintf(stderr, "[pzemu] No save state found: %s\n", g_state_path);
+        return;
+    }
+
+    fseek(f, 0, SEEK_END);
+    long sz = ftell(f);
+    fseek(f, 0, SEEK_SET);
+
+    void *buf = malloc((size_t)sz);
+    if (!buf) { fclose(f); return; }
+
+    if (fread(buf, 1, (size_t)sz, f) == (size_t)sz) {
+        if (p_retro_unserialize(buf, (size_t)sz)) {
+            fprintf(stderr, "[pzemu] Loaded state from %s (%ld bytes)\n", g_state_path, sz);
+        } else {
+            fprintf(stderr, "[pzemu] retro_unserialize() failed\n");
+        }
+    }
+    fclose(f);
+    free(buf);
+}
+
 static void signal_handler(int sig) {
     (void)sig;
     g_shutdown = true; /* let main loop exit cleanly so atexit/cleanup runs */
@@ -553,6 +654,9 @@ int main(int argc, char *argv[]) {
     load_sym(p_retro_set_audio_sample_batch,      retro_set_audio_sample_batch);
     load_sym(p_retro_set_input_poll,              retro_set_input_poll);
     load_sym(p_retro_set_input_state,             retro_set_input_state);
+    load_sym(p_retro_serialize_size,              retro_serialize_size);
+    load_sym(p_retro_serialize,                   retro_serialize);
+    load_sym(p_retro_unserialize,                 retro_unserialize);
 
     /* Verify API version */
     unsigned api_ver = p_retro_api_version();
@@ -624,6 +728,7 @@ int main(int argc, char *argv[]) {
 
     /* --- STEP 11: Load SRAM + register signal handlers --- */
     build_srm_path(rom_path, g_save_dir);
+    build_state_path(rom_path, g_save_dir);
     load_sram();
 
     /* Save SRAM on any exit path (signal, pipe close, clean shutdown) */
@@ -657,7 +762,12 @@ int main(int argc, char *argv[]) {
     /* --- STEP 13: Main emulation loop --- */
     fprintf(stderr, "[pzemu] Running emulation...\n");
     while (!g_shutdown) {
-        p_retro_run();
+        if (g_paused) {
+            poll_stdin_keys(); /* still read input so we can unpause */
+            SDL_Delay(16);     /* ~60fps idle loop, don't burn CPU */
+        } else {
+            p_retro_run();
+        }
     }
 
     /* --- STEP 14: Cleanup --- */
