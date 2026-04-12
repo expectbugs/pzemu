@@ -39,6 +39,76 @@ local function buildKeyMap(buttonMap)
     return map
 end
 
+-- ---------- gamepad map: Joypad.* constants → libretro button IDs ----------
+-- The RetroPad layout matches SNES, so the mapping is nearly 1:1.
+-- Per-console maps only include buttons that console actually has.
+
+local GAMEPAD_FULL = {}
+GAMEPAD_FULL[Joypad.BButton]   = 0   -- B (south face)
+GAMEPAD_FULL[Joypad.YButton]   = 1   -- Y (west face)
+GAMEPAD_FULL[Joypad.Back]      = 2   -- SELECT / Back
+GAMEPAD_FULL[Joypad.Start]     = 3   -- START
+GAMEPAD_FULL[Joypad.DPadUp]    = 4
+GAMEPAD_FULL[Joypad.DPadDown]  = 5
+GAMEPAD_FULL[Joypad.DPadLeft]  = 6
+GAMEPAD_FULL[Joypad.DPadRight] = 7
+GAMEPAD_FULL[Joypad.AButton]   = 8   -- A (east face)
+GAMEPAD_FULL[Joypad.XButton]   = 9   -- X (north face)
+GAMEPAD_FULL[Joypad.LBumper]   = 10  -- L shoulder
+GAMEPAD_FULL[Joypad.RBumper]   = 11  -- R shoulder
+
+-- NES/GB gamepad: B, A, Select, Start, D-pad (no Y/X/L/R)
+local GAMEPAD_NES = {}
+GAMEPAD_NES[Joypad.BButton]   = 0   -- B
+GAMEPAD_NES[Joypad.AButton]   = 8   -- A
+GAMEPAD_NES[Joypad.Back]      = 2   -- SELECT
+GAMEPAD_NES[Joypad.Start]     = 3   -- START
+GAMEPAD_NES[Joypad.DPadUp]    = 4
+GAMEPAD_NES[Joypad.DPadDown]  = 5
+GAMEPAD_NES[Joypad.DPadLeft]  = 6
+GAMEPAD_NES[Joypad.DPadRight] = 7
+
+-- SNES gamepad: full RetroPad (same as GAMEPAD_FULL)
+local GAMEPAD_SNES = GAMEPAD_FULL
+
+-- Genesis gamepad: A/B/C + X/Y/Z (6-button) mapped through libretro's SNES layout
+-- Genesis A=Y(1), B=B(0), C=A(8), X=L(10), Y=X(9), Z=R(11)
+local GAMEPAD_GENESIS = {}
+GAMEPAD_GENESIS[Joypad.YButton]   = 1   -- Genesis A (libretro Y / west face)
+GAMEPAD_GENESIS[Joypad.BButton]   = 0   -- Genesis B (libretro B / south face)
+GAMEPAD_GENESIS[Joypad.AButton]   = 8   -- Genesis C (libretro A / east face)
+GAMEPAD_GENESIS[Joypad.LBumper]   = 10  -- Genesis X (libretro L)
+GAMEPAD_GENESIS[Joypad.XButton]   = 9   -- Genesis Y (libretro X / north face)
+GAMEPAD_GENESIS[Joypad.RBumper]   = 11  -- Genesis Z (libretro R)
+GAMEPAD_GENESIS[Joypad.Start]     = 3   -- START
+GAMEPAD_GENESIS[Joypad.DPadUp]    = 4
+GAMEPAD_GENESIS[Joypad.DPadDown]  = 5
+GAMEPAD_GENESIS[Joypad.DPadLeft]  = 6
+GAMEPAD_GENESIS[Joypad.DPadRight] = 7
+
+-- Atari 2600 gamepad: fire + D-pad + select/reset
+local GAMEPAD_ATARI2600 = {}
+GAMEPAD_ATARI2600[Joypad.AButton]   = 0   -- Fire
+GAMEPAD_ATARI2600[Joypad.BButton]   = 0   -- Fire (alt)
+GAMEPAD_ATARI2600[Joypad.Back]      = 2   -- Game Select
+GAMEPAD_ATARI2600[Joypad.Start]     = 3   -- Game Reset
+GAMEPAD_ATARI2600[Joypad.DPadUp]    = 4
+GAMEPAD_ATARI2600[Joypad.DPadDown]  = 5
+GAMEPAD_ATARI2600[Joypad.DPadLeft]  = 6
+GAMEPAD_ATARI2600[Joypad.DPadRight] = 7
+
+-- Game Gear / Master System: 1, 2, Start + D-pad
+local GAMEPAD_GG = {}
+GAMEPAD_GG[Joypad.BButton]   = 0   -- Button 1
+GAMEPAD_GG[Joypad.AButton]   = 8   -- Button 2
+GAMEPAD_GG[Joypad.Start]     = 3   -- START
+GAMEPAD_GG[Joypad.DPadUp]    = 4
+GAMEPAD_GG[Joypad.DPadDown]  = 5
+GAMEPAD_GG[Joypad.DPadLeft]  = 6
+GAMEPAD_GG[Joypad.DPadRight] = 7
+
+local GAMEPAD_SMS = GAMEPAD_GG
+
 -- NES: 8 buttons — D-pad, B, A, Start, Select
 local NES_BUTTONS = {}
 NES_BUTTONS[Keyboard.KEY_Z]      = 0   -- B
@@ -146,6 +216,7 @@ local CONSOLES = {
         romDir        = "nes",
         romExtensions = { ".nes" },
         keyMap        = buildKeyMap(NES_BUTTONS),
+        gamepadMap    = GAMEPAD_NES,
         controlHints  = {
             "Arrows  =  D-pad",
             "Z or A  =  B button",
@@ -165,6 +236,7 @@ local CONSOLES = {
         romDir        = "snes",
         romExtensions = { ".smc", ".sfc" },
         keyMap        = buildKeyMap(SNES_BUTTONS),
+        gamepadMap    = GAMEPAD_SNES,
         controlHints  = {
             "Arrows  =  D-pad",
             "Z or A  =  B       X or S  =  A",
@@ -184,6 +256,7 @@ local CONSOLES = {
         romDir        = "genesis",
         romExtensions = { ".md", ".gen", ".bin", ".smd" },
         keyMap        = buildKeyMap(GENESIS_BUTTONS),
+        gamepadMap    = GAMEPAD_GENESIS,
         controlHints  = {
             "Arrows  =  D-pad",
             "Z or A  =  A       X or S  =  B       C or D  =  C",
@@ -202,6 +275,7 @@ local CONSOLES = {
         romDir        = "gb",
         romExtensions = { ".gb" },
         keyMap        = buildKeyMap(GB_BUTTONS),
+        gamepadMap    = GAMEPAD_NES,
         controlHints  = {
             "Arrows  =  D-pad",
             "Z or A  =  B button",
@@ -221,6 +295,7 @@ local CONSOLES = {
         romDir        = "atari2600",
         romExtensions = { ".a26", ".bin" },
         keyMap        = buildKeyMap(ATARI2600_BUTTONS),
+        gamepadMap    = GAMEPAD_ATARI2600,
         controlHints  = {
             "Arrows  =  Joystick",
             "Z or A  =  Fire",
@@ -239,6 +314,7 @@ local CONSOLES = {
         romDir        = "gg",
         romExtensions = { ".gg" },
         keyMap        = buildKeyMap(GG_BUTTONS),
+        gamepadMap    = GAMEPAD_GG,
         controlHints  = {
             "Arrows  =  D-pad",
             "Z or A  =  Button 1",
@@ -257,6 +333,7 @@ local CONSOLES = {
         romDir        = "sms",
         romExtensions = { ".sms" },
         keyMap        = buildKeyMap(SMS_BUTTONS),
+        gamepadMap    = GAMEPAD_SMS,
         controlHints  = {
             "Arrows  =  D-pad",
             "Z or A  =  Button 1",
@@ -395,6 +472,7 @@ function PZEMUGame:new(console)
     o.currentFrame = -1
     o.romPath = nil
     o.keyMap = console.keyMap
+    o.gamepadMap = console.gamepadMap
 
     -- Deploy binaries if needed (first-time only, fast no-op after)
     deployBinaries()
@@ -426,6 +504,15 @@ end
 function PZEMUGame:sendKey(lwjglKey, pressed)
     if self.state ~= "RUNNING" and self.state ~= "STARTING" then return end
     local retroBtn = self.keyMap[lwjglKey]
+    if retroBtn then
+        PZFB.gameSendInput(retroBtn, pressed)
+    end
+end
+
+function PZEMUGame:sendGamepadButton(joypadBtn, pressed)
+    if self.state ~= "RUNNING" and self.state ~= "STARTING" then return end
+    if not self.gamepadMap then return end
+    local retroBtn = self.gamepadMap[joypadBtn]
     if retroBtn then
         PZFB.gameSendInput(retroBtn, pressed)
     end

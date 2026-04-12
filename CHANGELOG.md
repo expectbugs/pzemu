@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.3.0] - 2026-04-12
+
+### Added
+- **Gamepad support** for all consoles via PZFB's PZFBInputPanel gamepad system
+  - D-pad and face buttons mapped per-console through `gamepadMap` config
+  - Left analog stick converted to D-pad input with 0.5 deadzone threshold
+  - SNES: full RetroPad 1:1 mapping (B/A/Y/X/L/R/Start/Back)
+  - Genesis: face buttons map to A/B/C, bumpers to X/Y/Z (6-button)
+  - NES/Game Boy: B/A/Start/Back
+  - Atari 2600: A or B = Fire, Start = Reset, Back = Select
+  - Game Gear/Master System: B = Button 1, A = Button 2, Start
+- Welcome screen now shows "Gamepad supported" hint
+
 ## [0.2.0] - 2026-04-11
 
 ### Added

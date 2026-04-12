@@ -60,6 +60,53 @@ function PZEMUGamePanel:onPZFBCaptureToggle(active)
     end
 end
 
+-- ---------- gamepad support ----------
+
+function PZEMUGamePanel:onPZFBGamepadDown(slot, button)
+    if self.game then
+        self.game:sendGamepadButton(button, 1)
+    end
+end
+
+function PZEMUGamePanel:onPZFBGamepadUp(slot, button)
+    if self.game then
+        self.game:sendGamepadButton(button, 0)
+    end
+end
+
+-- Analog stick → D-pad conversion for consoles without analog support
+local STICK_DEADZONE = 0.5
+local stickState = { left = 0, right = 0, up = 0, down = 0 }
+
+function PZEMUGamePanel:onPZFBGamepadAxis(slot, name, value)
+    if not self.game then return end
+
+    -- Only use left stick for D-pad
+    if name == "leftX" then
+        local wasLeft = stickState.left
+        local wasRight = stickState.right
+        stickState.left  = (value < -STICK_DEADZONE) and 1 or 0
+        stickState.right = (value >  STICK_DEADZONE) and 1 or 0
+        if stickState.left ~= wasLeft then
+            self.game:sendGamepadButton(Joypad.DPadLeft, stickState.left)
+        end
+        if stickState.right ~= wasRight then
+            self.game:sendGamepadButton(Joypad.DPadRight, stickState.right)
+        end
+    elseif name == "leftY" then
+        local wasUp = stickState.up
+        local wasDown = stickState.down
+        stickState.up   = (value < -STICK_DEADZONE) and 1 or 0
+        stickState.down = (value >  STICK_DEADZONE) and 1 or 0
+        if stickState.up ~= wasUp then
+            self.game:sendGamepadButton(Joypad.DPadUp, stickState.up)
+        end
+        if stickState.down ~= wasDown then
+            self.game:sendGamepadButton(Joypad.DPadDown, stickState.down)
+        end
+    end
+end
+
 function PZEMUGamePanel:render()
     PZFBInputPanel.render(self)
     local game = self.game
@@ -308,6 +355,8 @@ function PZEMUWelcome:render()
     -- Common controls
     y = y + 10
     local common = {
+        "Gamepad supported (left stick = D-pad)",
+        "",
         "ESC  =  Freeze / unfreeze emulation",
         "F5  =  Save state    F7  =  Load state",
         "Scroll Lock  =  Lock/unlock input",
