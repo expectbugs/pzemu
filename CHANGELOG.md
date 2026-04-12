@@ -28,6 +28,8 @@
 
 ### Fixed
 - ISPanel constructor calls used colon syntax (`ISPanel:new()`) instead of dot syntax (`ISPanel.new(self, ...)`), causing ROM picker and welcome panels to render as plain black panels with no content
+- Changed load state from F9 to F7 (F9 conflicts with PZ's built-in keybinding)
+- Added A/S as alternate B/A buttons to work around keyboard ghosting when holding Z + Arrow + X simultaneously
 
 ### Known Issues
 - ROM filenames with spaces break due to PZFB's `gameStart()` splitting extraArgs on whitespace — rename files to use underscores

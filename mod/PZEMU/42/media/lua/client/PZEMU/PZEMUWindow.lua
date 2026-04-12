@@ -217,14 +217,13 @@ function PZEMUWelcome:render()
     -- Controls
     local controls = {
         "Arrows  =  D-pad",
-        "Z  =  B button",
-        "X  =  A button",
+        "Z or A  =  B button",
+        "X or S  =  A button (jump)",
         "Enter  =  Start",
         "Right Shift  =  Select",
         "",
         "ESC  =  Freeze / unfreeze emulation",
-        "F5  =  Save state",
-        "F9  =  Load state",
+        "F5  =  Save state    F7  =  Load state",
         "Scroll Lock  =  Lock/unlock input",
     }
 

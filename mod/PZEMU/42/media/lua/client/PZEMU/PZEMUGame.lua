@@ -29,8 +29,12 @@ end
 -- IDs 16+ are meta-commands handled by the bridge (not sent to the core).
 
 local NES_KEY_MAP = {}
+-- Primary layout (Z/X + Arrows)
 NES_KEY_MAP[Keyboard.KEY_Z]      = 0   -- B (south face)
 NES_KEY_MAP[Keyboard.KEY_X]      = 8   -- A (east face)
+-- Alternative layout (A/S + Arrows) — avoids keyboard ghosting with Z/X + arrows
+NES_KEY_MAP[Keyboard.KEY_A]      = 0   -- B (alternate)
+NES_KEY_MAP[Keyboard.KEY_S]      = 8   -- A (alternate)
 NES_KEY_MAP[Keyboard.KEY_RSHIFT] = 2   -- SELECT
 NES_KEY_MAP[Keyboard.KEY_RETURN] = 3   -- START
 NES_KEY_MAP[Keyboard.KEY_UP]     = 4   -- D-pad UP
@@ -39,7 +43,7 @@ NES_KEY_MAP[Keyboard.KEY_LEFT]   = 6   -- D-pad LEFT
 NES_KEY_MAP[Keyboard.KEY_RIGHT]  = 7   -- D-pad RIGHT
 NES_KEY_MAP[Keyboard.KEY_ESCAPE] = 18  -- ESC → freeze emulation (meta-command)
 NES_KEY_MAP[Keyboard.KEY_F5]     = 16  -- Save state (meta-command)
-NES_KEY_MAP[Keyboard.KEY_F9]     = 17  -- Load state (meta-command)
+NES_KEY_MAP[Keyboard.KEY_F7]     = 17  -- Load state (meta-command)
 
 -- ---------- .dat file path resolution (handles Workshop vs local) ----------
 
