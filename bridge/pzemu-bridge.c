@@ -410,11 +410,20 @@ static void RETRO_CALLCONV audio_sample_cb(int16_t left, int16_t right) {
 static size_t RETRO_CALLCONV audio_batch_cb(const int16_t *data, size_t frames) {
     if (!g_audio_dev) return frames;
 
-    /* throttle: audio queue backpressure = frame rate limiter */
-    while (SDL_GetQueuedAudioSize(g_audio_dev) > frames * 4 * 4)
-        SDL_Delay(1);
+    /* Throttle: audio queue backpressure = frame rate limiter.
+     * Tight threshold (~1 video frame of audio) for smooth frame pacing.
+     * SDL_Delay(1) can overshoot by several ms, so only sleep when the
+     * queue is well ahead, and busy-yield when close to draining. */
+    Uint32 queued;
+    Uint32 batch_bytes = (Uint32)(frames * 2 * sizeof(int16_t));
+    while ((queued = SDL_GetQueuedAudioSize(g_audio_dev)) > batch_bytes * 2) {
+        if (queued > batch_bytes * 4)
+            SDL_Delay(1);  /* well ahead — sleep to save CPU */
+        else
+            SDL_Delay(0);  /* close — just yield */
+    }
 
-    SDL_QueueAudio(g_audio_dev, data, (Uint32)(frames * 2 * sizeof(int16_t)));
+    SDL_QueueAudio(g_audio_dev, data, batch_bytes);
     return frames;
 }
 
