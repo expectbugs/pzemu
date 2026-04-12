@@ -366,35 +366,54 @@ local function findModDat(filename)
     return nil
 end
 
--- ---------- binary deployment ----------
+-- ---------- binary deployment (platform-aware, follows PZDOOM pattern) ----------
 
 local function deployBinaries()
     local sep = getFileSeparator()
     local destDir = getUserDir()
 
-    -- Deploy bridge binary
-    local bridgeDat = isWindows() and "pzemu-bridge_win.dat" or "pzemu-bridge.dat"
-    local bridgeDest = isWindows() and "pzemu-bridge.exe" or "pzemu-bridge"
-    local bridgePath = destDir .. sep .. bridgeDest
-    if PZFB.fileSize(bridgePath) <= 0 then
-        local src = findModDat(bridgeDat)
-        if src then
-            print("[PZEMU] Deploying " .. bridgeDat .. " -> " .. bridgePath)
-            PZFB.copyFile(src, bridgePath)
+    -- Deploy bridge binary + SDL2 (Windows needs SDL2.dll)
+    local files
+    if isWindows() then
+        files = {
+            { dat = "pzemu-bridge_win.dat", dest = "pzemu-bridge.exe" },
+            { dat = "SDL2.dat",             dest = "SDL2.dll" },
+        }
+    else
+        files = {
+            { dat = "pzemu-bridge.dat", dest = "pzemu-bridge" },
+        }
+    end
+
+    for _, f in ipairs(files) do
+        local destPath = destDir .. sep .. f.dest
+        if PZFB.fileSize(destPath) <= 0 then
+            local src = findModDat(f.dat)
+            if src then
+                print("[PZEMU] Deploying " .. f.dat .. " -> " .. destPath)
+                PZFB.copyFile(src, destPath)
+            end
         end
     end
 
     -- Deploy all cores (skip duplicates — genesis_plus_gx is shared)
+    -- Windows uses _win.dat files containing .dll cores
     local deployed = {}
     for _, console in ipairs(CONSOLES) do
-        if not deployed[console.coreDat] then
-            deployed[console.coreDat] = true
+        if not deployed[console.coreFile] then
+            deployed[console.coreFile] = true
             local ext = isWindows() and ".dll" or ".so"
             local coreDest = destDir .. sep .. console.coreFile .. ext
             if PZFB.fileSize(coreDest) <= 0 then
-                local src = findModDat(console.coreDat)
+                local datName
+                if isWindows() then
+                    datName = string.gsub(console.coreDat, "%.dat$", "_win.dat")
+                else
+                    datName = console.coreDat
+                end
+                local src = findModDat(datName)
                 if src then
-                    print("[PZEMU] Deploying " .. console.coreDat .. " -> " .. coreDest)
+                    print("[PZEMU] Deploying " .. datName .. " -> " .. coreDest)
                     PZFB.copyFile(src, coreDest)
                 end
             end
@@ -402,63 +421,19 @@ local function deployBinaries()
     end
 end
 
--- ---------- ROM scanning ----------
-
-local function matchesExtension(filename, extensions)
-    local lower = string.lower(filename)
-    for _, ext in ipairs(extensions) do
-        if string.sub(lower, -(#ext)) == ext then
-            return true
-        end
-    end
-    return false
-end
-
-local function scanDir(dirPath, extensions, results, seen)
-    local listing = PZFB.listDir(dirPath)
-    if not listing or listing == "" then return end
-    local sep = getFileSeparator()
-    for line in string.gmatch(listing, "[^\n]+") do
-        local lower = string.lower(line)
-        if matchesExtension(line, extensions) and not seen[lower] then
-            seen[lower] = true
-            table.insert(results, {
-                name = line,
-                path = dirPath .. sep .. line,
-            })
-        end
-    end
-end
-
-function PZEMUGame.findRoms(console)
-    local sep = getFileSeparator()
-    local results = {}
-    local seen = {}
-
-    -- Bundled ROMs from mod directory
-    local modInfo = getModInfoByID("PZEMU")
-    if modInfo then
-        local dir = modInfo:getDir()
-        if dir then
-            scanDir(dir .. sep .. "media" .. sep .. "pzemu" .. sep .. "roms" .. sep .. console.romDir, console.romExtensions, results, seen)
-            scanDir(dir .. sep .. "42" .. sep .. "media" .. sep .. "pzemu" .. sep .. "roms" .. sep .. console.romDir, console.romExtensions, results, seen)
-        end
-        local ok, vdir = pcall(function() return modInfo:getVersionDir() end)
-        if ok and vdir then
-            scanDir(vdir .. sep .. "media" .. sep .. "pzemu" .. sep .. "roms" .. sep .. console.romDir, console.romExtensions, results, seen)
-        end
-    end
-
-    -- User ROMs from ~/Zomboid/PZEMU/roms/<system>/
-    scanDir(getUserDir() .. sep .. "roms" .. sep .. console.romDir, console.romExtensions, results, seen)
-
-    return results
-end
-
 -- ---------- public: get consoles list ----------
 
 function PZEMUGame.getConsoles()
     return CONSOLES
+end
+
+function PZEMUGame.getConsoleById(id)
+    for _, console in ipairs(CONSOLES) do
+        if console.id == id then
+            return console
+        end
+    end
+    return nil
 end
 
 -- ---------- constructor ----------

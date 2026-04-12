@@ -28,9 +28,19 @@
 #include <windows.h>
 #include <io.h>
 #include <fcntl.h>
+#include <direct.h>
 #define load_lib(p)      LoadLibraryA(p)
 #define load_func(h, s)  ((void*)GetProcAddress((HMODULE)(h), s))
 #define close_lib(h)     FreeLibrary((HMODULE)(h))
+/* MinGW lacks strndup */
+static char *strndup_compat(const char *s, size_t n) {
+    size_t len = strlen(s);
+    if (n < len) len = n;
+    char *r = (char *)malloc(len + 1);
+    if (r) { memcpy(r, s, len); r[len] = '\0'; }
+    return r;
+}
+#define strndup strndup_compat
 #else
 #include <dlfcn.h>
 #include <unistd.h>

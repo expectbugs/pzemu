@@ -1,8 +1,9 @@
-name=PZEMU - NES Emulation
+name=REAL Zomboid Console Emulation
 id=PZEMU
 require=PZFB
-description=Play NES games on in-game TVs. Right-click any TV and select Play NES.
+description=Collectible retro game consoles and cartridges. Find NES, SNES, Genesis, Game Boy, Atari 2600, Game Gear, and Master System consoles during loot runs. Play real retro games on in-game TVs powered by libretro emulation. Place your own legally obtained ROM files in your Zomboid/PZEMU/roms/ directories (nes/, snes/, genesis/, gb/, atari2600/, gg/, sms/). For dumping ROMs from original cartridges, we recommend the Retrode hardware device. Linux and Windows supported.
+url=https://github.com/expectbugs/pzemu
 poster=poster.png
 icon=icon.png
-modversion=0.3.0
+modversion=0.5.0
 versionMin=42.0

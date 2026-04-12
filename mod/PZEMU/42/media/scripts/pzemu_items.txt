@@ -1,0 +1,713 @@
+module PZEMU
+{
+    imports
+    {
+        Base
+    }
+
+    /*************** CONSOLES ***************/
+
+    item NES_Console
+    {
+        ItemType            = base:normal,
+        DisplayName         = Nintendo Entertainment System,
+        Weight              = 2.27,
+        Icon                = PZEMU_NES,
+        DisplayCategory     = Electronics,
+        Tags                = PZEMU_Console;PZEMU_NES,
+    }
+
+    item SNES_Console
+    {
+        ItemType            = base:normal,
+        DisplayName         = Super Nintendo,
+        Weight              = 0.9,
+        Icon                = PZEMU_SNES,
+        DisplayCategory     = Electronics,
+        Tags                = PZEMU_Console;PZEMU_SNES,
+    }
+
+    item Genesis_Console
+    {
+        ItemType            = base:normal,
+        DisplayName         = Sega Genesis,
+        Weight              = 1.1,
+        Icon                = PZEMU_Genesis,
+        DisplayCategory     = Electronics,
+        Tags                = PZEMU_Console;PZEMU_Genesis,
+    }
+
+    item GameBoy_Console
+    {
+        ItemType            = base:Drainable,
+        DisplayName         = Game Boy,
+        Weight              = 0.24,
+        UseDelta            = 0.1,
+        UseWhileEquipped    = FALSE,
+        CantBeConsolided    = TRUE,
+        KeepOnDeplete       = TRUE,
+        DisappearOnUse      = FALSE,
+        Icon                = PZEMU_GameBoy,
+        DisplayCategory     = Electronics,
+        Tags                = PZEMU_Console;PZEMU_Handheld;PZEMU_GB,
+    }
+
+    item Atari2600_Console
+    {
+        ItemType            = base:normal,
+        DisplayName         = Atari 2600,
+        Weight              = 1.5,
+        Icon                = PZEMU_Atari2600,
+        DisplayCategory     = Electronics,
+        Tags                = PZEMU_Console;PZEMU_Atari2600,
+    }
+
+    item GameGear_Console
+    {
+        ItemType            = base:Drainable,
+        DisplayName         = Sega Game Gear,
+        Weight              = 0.4,
+        UseDelta            = 0.1,
+        UseWhileEquipped    = FALSE,
+        CantBeConsolided    = TRUE,
+        KeepOnDeplete       = TRUE,
+        DisappearOnUse      = FALSE,
+        Icon                = PZEMU_GameGear,
+        DisplayCategory     = Electronics,
+        Tags                = PZEMU_Console;PZEMU_Handheld;PZEMU_GG,
+    }
+
+    item SMS_Console
+    {
+        ItemType            = base:normal,
+        DisplayName         = Sega Master System,
+        Weight              = 1.0,
+        Icon                = PZEMU_SMS,
+        DisplayCategory     = Electronics,
+        Tags                = PZEMU_Console;PZEMU_SMS,
+    }
+
+    /*************** NES CARTRIDGES ***************/
+
+    item NES_Cart_Mario
+    {
+        ItemType            = base:normal,
+        DisplayName         = Super Mario Bros.,
+        Weight              = 0.1,
+        Icon                = PZEMU_NES_Cart_Mario,
+        DisplayCategory     = Electronics,
+        Tags                = PZEMU_Cartridge;PZEMU_NES,
+    }
+
+    item NES_Cart_Zelda
+    {
+        ItemType            = base:normal,
+        DisplayName         = The Legend of Zelda,
+        Weight              = 0.1,
+        Icon                = PZEMU_NES_Cart_Zelda,
+        DisplayCategory     = Electronics,
+        Tags                = PZEMU_Cartridge;PZEMU_NES,
+    }
+
+    item NES_Cart_Contra
+    {
+        ItemType            = base:normal,
+        DisplayName         = Contra,
+        Weight              = 0.1,
+        Icon                = PZEMU_NES_Cart_Contra,
+        DisplayCategory     = Electronics,
+        Tags                = PZEMU_Cartridge;PZEMU_NES,
+    }
+
+    item NES_Cart_MegaMan
+    {
+        ItemType            = base:normal,
+        DisplayName         = Mega Man 2,
+        Weight              = 0.1,
+        Icon                = PZEMU_NES_Cart_MegaMan,
+        DisplayCategory     = Electronics,
+        Tags                = PZEMU_Cartridge;PZEMU_NES,
+    }
+
+    item NES_Cart_Metroid
+    {
+        ItemType            = base:normal,
+        DisplayName         = Metroid,
+        Weight              = 0.1,
+        Icon                = PZEMU_NES_Cart_Metroid,
+        DisplayCategory     = Electronics,
+        Tags                = PZEMU_Cartridge;PZEMU_NES,
+    }
+
+    item NES_Cart_Generic
+    {
+        ItemType            = base:normal,
+        DisplayName         = NES Game,
+        Weight              = 0.1,
+        Icon                = PZEMU_NES_Cart,
+        DisplayCategory     = Electronics,
+        Tags                = PZEMU_Cartridge;PZEMU_NES,
+    }
+
+    /*************** SNES CARTRIDGES ***************/
+
+    item SNES_Cart_MarioWorld
+    {
+        ItemType            = base:normal,
+        DisplayName         = Super Mario World,
+        Weight              = 0.1,
+        Icon                = PZEMU_SNES_Cart_MarioWorld,
+        DisplayCategory     = Electronics,
+        Tags                = PZEMU_Cartridge;PZEMU_SNES,
+    }
+
+    item SNES_Cart_Zelda
+    {
+        ItemType            = base:normal,
+        DisplayName         = Zelda: A Link to the Past,
+        Weight              = 0.1,
+        Icon                = PZEMU_SNES_Cart_Zelda,
+        DisplayCategory     = Electronics,
+        Tags                = PZEMU_Cartridge;PZEMU_SNES,
+    }
+
+    item SNES_Cart_SF2
+    {
+        ItemType            = base:normal,
+        DisplayName         = Street Fighter II Turbo,
+        Weight              = 0.1,
+        Icon                = PZEMU_SNES_Cart_SF2,
+        DisplayCategory     = Electronics,
+        Tags                = PZEMU_Cartridge;PZEMU_SNES,
+    }
+
+    item SNES_Cart_MK2
+    {
+        ItemType            = base:normal,
+        DisplayName         = Mortal Kombat II,
+        Weight              = 0.1,
+        Icon                = PZEMU_SNES_Cart_MK2,
+        DisplayCategory     = Electronics,
+        Tags                = PZEMU_Cartridge;PZEMU_SNES,
+    }
+
+    item SNES_Cart_StarFox
+    {
+        ItemType            = base:normal,
+        DisplayName         = Star Fox,
+        Weight              = 0.1,
+        Icon                = PZEMU_SNES_Cart_StarFox,
+        DisplayCategory     = Electronics,
+        Tags                = PZEMU_Cartridge;PZEMU_SNES,
+    }
+
+    item SNES_Cart_SecretOfMana
+    {
+        ItemType            = base:normal,
+        DisplayName         = Secret of Mana,
+        Weight              = 0.1,
+        Icon                = PZEMU_SNES_Cart_SecretOfMana,
+        DisplayCategory     = Electronics,
+        Tags                = PZEMU_Cartridge;PZEMU_SNES,
+    }
+
+    item SNES_Cart_NBAJam
+    {
+        ItemType            = base:normal,
+        DisplayName         = NBA Jam,
+        Weight              = 0.1,
+        Icon                = PZEMU_SNES_Cart_NBAJam,
+        DisplayCategory     = Electronics,
+        Tags                = PZEMU_Cartridge;PZEMU_SNES,
+    }
+
+    item SNES_Cart_Generic
+    {
+        ItemType            = base:normal,
+        DisplayName         = SNES Game,
+        Weight              = 0.1,
+        Icon                = PZEMU_SNES_Cart,
+        DisplayCategory     = Electronics,
+        Tags                = PZEMU_Cartridge;PZEMU_SNES,
+    }
+
+    /*************** GENESIS CARTRIDGES ***************/
+
+    item Genesis_Cart_Sonic
+    {
+        ItemType            = base:normal,
+        DisplayName         = Sonic the Hedgehog,
+        Weight              = 0.1,
+        Icon                = PZEMU_Genesis_Cart_Sonic,
+        DisplayCategory     = Electronics,
+        Tags                = PZEMU_Cartridge;PZEMU_Genesis,
+    }
+
+    item Genesis_Cart_GoldenAxe
+    {
+        ItemType            = base:normal,
+        DisplayName         = Golden Axe,
+        Weight              = 0.1,
+        Icon                = PZEMU_Genesis_Cart_GoldenAxe,
+        DisplayCategory     = Electronics,
+        Tags                = PZEMU_Cartridge;PZEMU_Genesis,
+    }
+
+    item Genesis_Cart_Aladdin
+    {
+        ItemType            = base:normal,
+        DisplayName         = Aladdin,
+        Weight              = 0.1,
+        Icon                = PZEMU_Genesis_Cart_Aladdin,
+        DisplayCategory     = Electronics,
+        Tags                = PZEMU_Cartridge;PZEMU_Genesis,
+    }
+
+    item Genesis_Cart_SF2
+    {
+        ItemType            = base:normal,
+        DisplayName         = Street Fighter II,
+        Weight              = 0.1,
+        Icon                = PZEMU_Genesis_Cart_SF2,
+        DisplayCategory     = Electronics,
+        Tags                = PZEMU_Cartridge;PZEMU_Genesis,
+    }
+
+    item Genesis_Cart_AlteredBeast
+    {
+        ItemType            = base:normal,
+        DisplayName         = Altered Beast,
+        Weight              = 0.1,
+        Icon                = PZEMU_Genesis_Cart_AlteredBeast,
+        DisplayCategory     = Electronics,
+        Tags                = PZEMU_Cartridge;PZEMU_Genesis,
+    }
+
+    item Genesis_Cart_DesertStrike
+    {
+        ItemType            = base:normal,
+        DisplayName         = Desert Strike,
+        Weight              = 0.1,
+        Icon                = PZEMU_Genesis_Cart_DesertStrike,
+        DisplayCategory     = Electronics,
+        Tags                = PZEMU_Cartridge;PZEMU_Genesis,
+    }
+
+    item Genesis_Cart_FatalFury
+    {
+        ItemType            = base:normal,
+        DisplayName         = Fatal Fury,
+        Weight              = 0.1,
+        Icon                = PZEMU_Genesis_Cart_FatalFury,
+        DisplayCategory     = Electronics,
+        Tags                = PZEMU_Cartridge;PZEMU_Genesis,
+    }
+
+    item Genesis_Cart_GoldenAxe2
+    {
+        ItemType            = base:normal,
+        DisplayName         = Golden Axe 2,
+        Weight              = 0.1,
+        Icon                = PZEMU_Genesis_Cart_GoldenAxe2,
+        DisplayCategory     = Electronics,
+        Tags                = PZEMU_Cartridge;PZEMU_Genesis,
+    }
+
+    item Genesis_Cart_GhoulsNGhosts
+    {
+        ItemType            = base:normal,
+        DisplayName         = Ghouls 'N Ghosts,
+        Weight              = 0.1,
+        Icon                = PZEMU_Genesis_Cart_GhoulsNGhosts,
+        DisplayCategory     = Electronics,
+        Tags                = PZEMU_Cartridge;PZEMU_Genesis,
+    }
+
+    item Genesis_Cart_HerzogZwei
+    {
+        ItemType            = base:normal,
+        DisplayName         = Herzog Zwei,
+        Weight              = 0.1,
+        Icon                = PZEMU_Genesis_Cart_HerzogZwei,
+        DisplayCategory     = Electronics,
+        Tags                = PZEMU_Cartridge;PZEMU_Genesis,
+    }
+
+    item Genesis_Cart_LighteningForce
+    {
+        ItemType            = base:normal,
+        DisplayName         = Lightening Force,
+        Weight              = 0.1,
+        Icon                = PZEMU_Genesis_Cart_LighteningForce,
+        DisplayCategory     = Electronics,
+        Tags                = PZEMU_Cartridge;PZEMU_Genesis,
+    }
+
+    item Genesis_Cart_Moonwalker
+    {
+        ItemType            = base:normal,
+        DisplayName         = Moonwalker,
+        Weight              = 0.1,
+        Icon                = PZEMU_Genesis_Cart_Moonwalker,
+        DisplayCategory     = Electronics,
+        Tags                = PZEMU_Cartridge;PZEMU_Genesis,
+    }
+
+    item Genesis_Cart_OutRun
+    {
+        ItemType            = base:normal,
+        DisplayName         = OutRun,
+        Weight              = 0.1,
+        Icon                = PZEMU_Genesis_Cart_OutRun,
+        DisplayCategory     = Electronics,
+        Tags                = PZEMU_Cartridge;PZEMU_Genesis,
+    }
+
+    item Genesis_Cart_PhantasyStar3
+    {
+        ItemType            = base:normal,
+        DisplayName         = Phantasy Star III,
+        Weight              = 0.1,
+        Icon                = PZEMU_Genesis_Cart_PhantasyStar3,
+        DisplayCategory     = Electronics,
+        Tags                = PZEMU_Cartridge;PZEMU_Genesis,
+    }
+
+    item Genesis_Cart_QuackShot
+    {
+        ItemType            = base:normal,
+        DisplayName         = QuackShot,
+        Weight              = 0.1,
+        Icon                = PZEMU_Genesis_Cart_QuackShot,
+        DisplayCategory     = Electronics,
+        Tags                = PZEMU_Cartridge;PZEMU_Genesis,
+    }
+
+    item Genesis_Cart_RoadRash2
+    {
+        ItemType            = base:normal,
+        DisplayName         = Road Rash 2,
+        Weight              = 0.1,
+        Icon                = PZEMU_Genesis_Cart_RoadRash2,
+        DisplayCategory     = Electronics,
+        Tags                = PZEMU_Cartridge;PZEMU_Genesis,
+    }
+
+    item Genesis_Cart_RollingThunder2
+    {
+        ItemType            = base:normal,
+        DisplayName         = Rolling Thunder 2,
+        Weight              = 0.1,
+        Icon                = PZEMU_Genesis_Cart_RollingThunder2,
+        DisplayCategory     = Electronics,
+        Tags                = PZEMU_Cartridge;PZEMU_Genesis,
+    }
+
+    item Genesis_Cart_ShadowDancer
+    {
+        ItemType            = base:normal,
+        DisplayName         = Shadow Dancer,
+        Weight              = 0.1,
+        Icon                = PZEMU_Genesis_Cart_ShadowDancer,
+        DisplayCategory     = Electronics,
+        Tags                = PZEMU_Cartridge;PZEMU_Genesis,
+    }
+
+    item Genesis_Cart_RevengeOfShinobi
+    {
+        ItemType            = base:normal,
+        DisplayName         = Revenge of Shinobi,
+        Weight              = 0.1,
+        Icon                = PZEMU_Genesis_Cart_RevengeOfShinobi,
+        DisplayCategory     = Electronics,
+        Tags                = PZEMU_Cartridge;PZEMU_Genesis,
+    }
+
+    item Genesis_Cart_Sonic2
+    {
+        ItemType            = base:normal,
+        DisplayName         = Sonic the Hedgehog 2,
+        Weight              = 0.1,
+        Icon                = PZEMU_Genesis_Cart_Sonic2,
+        DisplayCategory     = Electronics,
+        Tags                = PZEMU_Cartridge;PZEMU_Genesis,
+    }
+
+    item Genesis_Cart_SpaceHarrier2
+    {
+        ItemType            = base:normal,
+        DisplayName         = Space Harrier 2,
+        Weight              = 0.1,
+        Icon                = PZEMU_Genesis_Cart_SpaceHarrier2,
+        DisplayCategory     = Electronics,
+        Tags                = PZEMU_Cartridge;PZEMU_Genesis,
+    }
+
+    item Genesis_Cart_Splatterhouse2
+    {
+        ItemType            = base:normal,
+        DisplayName         = Splatterhouse 2,
+        Weight              = 0.1,
+        Icon                = PZEMU_Genesis_Cart_Splatterhouse2,
+        DisplayCategory     = Electronics,
+        Tags                = PZEMU_Cartridge;PZEMU_Genesis,
+    }
+
+    item Genesis_Cart_StreetsOfRage
+    {
+        ItemType            = base:normal,
+        DisplayName         = Streets of Rage,
+        Weight              = 0.1,
+        Icon                = PZEMU_Genesis_Cart_StreetsOfRage,
+        DisplayCategory     = Electronics,
+        Tags                = PZEMU_Cartridge;PZEMU_Genesis,
+    }
+
+    item Genesis_Cart_StreetsOfRage2
+    {
+        ItemType            = base:normal,
+        DisplayName         = Streets of Rage 2,
+        Weight              = 0.1,
+        Icon                = PZEMU_Genesis_Cart_StreetsOfRage2,
+        DisplayCategory     = Electronics,
+        Tags                = PZEMU_Cartridge;PZEMU_Genesis,
+    }
+
+    item Genesis_Cart_Strider
+    {
+        ItemType            = base:normal,
+        DisplayName         = Strider,
+        Weight              = 0.1,
+        Icon                = PZEMU_Genesis_Cart_Strider,
+        DisplayCategory     = Electronics,
+        Tags                = PZEMU_Cartridge;PZEMU_Genesis,
+    }
+
+    item Genesis_Cart_TMNTHH
+    {
+        ItemType            = base:normal,
+        DisplayName         = TMNT: The Hyperstone Heist,
+        Weight              = 0.1,
+        Icon                = PZEMU_Genesis_Cart_TMNTHH,
+        DisplayCategory     = Electronics,
+        Tags                = PZEMU_Cartridge;PZEMU_Genesis,
+    }
+
+    item Genesis_Cart_Generic
+    {
+        ItemType            = base:normal,
+        DisplayName         = Genesis Game,
+        Weight              = 0.1,
+        Icon                = PZEMU_Genesis_Cart,
+        DisplayCategory     = Electronics,
+        Tags                = PZEMU_Cartridge;PZEMU_Genesis,
+    }
+
+    /*************** GAME BOY CARTRIDGES ***************/
+
+    item GB_Cart_Tetris
+    {
+        ItemType            = base:normal,
+        DisplayName         = Tetris,
+        Weight              = 0.02,
+        Icon                = PZEMU_GB_Cart_Tetris,
+        DisplayCategory     = Electronics,
+        Tags                = PZEMU_Cartridge;PZEMU_GB,
+    }
+
+    item GB_Cart_Mario
+    {
+        ItemType            = base:normal,
+        DisplayName         = Super Mario Land,
+        Weight              = 0.02,
+        Icon                = PZEMU_GB_Cart_Mario,
+        DisplayCategory     = Electronics,
+        Tags                = PZEMU_Cartridge;PZEMU_GB,
+    }
+
+    item GB_Cart_Zelda
+    {
+        ItemType            = base:normal,
+        DisplayName         = Zelda: Link's Awakening,
+        Weight              = 0.02,
+        Icon                = PZEMU_GB_Cart_Zelda,
+        DisplayCategory     = Electronics,
+        Tags                = PZEMU_Cartridge;PZEMU_GB,
+    }
+
+    item GB_Cart_Kirby
+    {
+        ItemType            = base:normal,
+        DisplayName         = Kirby's Dream Land,
+        Weight              = 0.02,
+        Icon                = PZEMU_GB_Cart_Kirby,
+        DisplayCategory     = Electronics,
+        Tags                = PZEMU_Cartridge;PZEMU_GB,
+    }
+
+    item GB_Cart_FinalFantasyLegend
+    {
+        ItemType            = base:normal,
+        DisplayName         = Final Fantasy Legend,
+        Weight              = 0.02,
+        Icon                = PZEMU_GB_Cart_FinalFantasyLegend,
+        DisplayCategory     = Electronics,
+        Tags                = PZEMU_Cartridge;PZEMU_GB,
+    }
+
+    item GB_Cart_Generic
+    {
+        ItemType            = base:normal,
+        DisplayName         = Game Boy Game,
+        Weight              = 0.02,
+        Icon                = PZEMU_GB_Cart,
+        DisplayCategory     = Electronics,
+        Tags                = PZEMU_Cartridge;PZEMU_GB,
+    }
+
+    /*************** ATARI 2600 CARTRIDGES ***************/
+
+    item Atari_Cart_Combat
+    {
+        ItemType            = base:normal,
+        DisplayName         = Combat,
+        Weight              = 0.08,
+        Icon                = PZEMU_Atari_Cart_Combat,
+        DisplayCategory     = Electronics,
+        Tags                = PZEMU_Cartridge;PZEMU_Atari2600,
+    }
+
+    item Atari_Cart_Asteroids
+    {
+        ItemType            = base:normal,
+        DisplayName         = Asteroids,
+        Weight              = 0.08,
+        Icon                = PZEMU_Atari_Cart_Asteroids,
+        DisplayCategory     = Electronics,
+        Tags                = PZEMU_Cartridge;PZEMU_Atari2600,
+    }
+
+    item Atari_Cart_Pitfall
+    {
+        ItemType            = base:normal,
+        DisplayName         = Pitfall!,
+        Weight              = 0.08,
+        Icon                = PZEMU_Atari_Cart_Pitfall,
+        DisplayCategory     = Electronics,
+        Tags                = PZEMU_Cartridge;PZEMU_Atari2600,
+    }
+
+    item Atari_Cart_SpaceInvaders
+    {
+        ItemType            = base:normal,
+        DisplayName         = Space Invaders,
+        Weight              = 0.08,
+        Icon                = PZEMU_Atari_Cart_SpaceInvaders,
+        DisplayCategory     = Electronics,
+        Tags                = PZEMU_Cartridge;PZEMU_Atari2600,
+    }
+
+    item Atari_Cart_MsPacMan
+    {
+        ItemType            = base:normal,
+        DisplayName         = Ms. Pac-Man,
+        Weight              = 0.08,
+        Icon                = PZEMU_Atari_Cart_MsPacMan,
+        DisplayCategory     = Electronics,
+        Tags                = PZEMU_Cartridge;PZEMU_Atari2600,
+    }
+
+    item Atari_Cart_Generic
+    {
+        ItemType            = base:normal,
+        DisplayName         = Atari 2600 Game,
+        Weight              = 0.08,
+        Icon                = PZEMU_Atari_Cart,
+        DisplayCategory     = Electronics,
+        Tags                = PZEMU_Cartridge;PZEMU_Atari2600,
+    }
+
+    /*************** GAME GEAR CARTRIDGES ***************/
+
+    item GG_Cart_Sonic
+    {
+        ItemType            = base:normal,
+        DisplayName         = Sonic the Hedgehog,
+        Weight              = 0.04,
+        Icon                = PZEMU_GG_Cart_Sonic,
+        DisplayCategory     = Electronics,
+        Tags                = PZEMU_Cartridge;PZEMU_GG,
+    }
+
+    item GG_Cart_Columns
+    {
+        ItemType            = base:normal,
+        DisplayName         = Columns,
+        Weight              = 0.04,
+        Icon                = PZEMU_GG_Cart_Columns,
+        DisplayCategory     = Electronics,
+        Tags                = PZEMU_Cartridge;PZEMU_GG,
+    }
+
+    item GG_Cart_Klax
+    {
+        ItemType            = base:normal,
+        DisplayName         = Klax,
+        Weight              = 0.04,
+        Icon                = PZEMU_GG_Cart_Klax,
+        DisplayCategory     = Electronics,
+        Tags                = PZEMU_Cartridge;PZEMU_GG,
+    }
+
+    item GG_Cart_OutRun
+    {
+        ItemType            = base:normal,
+        DisplayName         = OutRun Europa,
+        Weight              = 0.04,
+        Icon                = PZEMU_GG_Cart_OutRun,
+        DisplayCategory     = Electronics,
+        Tags                = PZEMU_Cartridge;PZEMU_GG,
+    }
+
+    item GG_Cart_Paperboy
+    {
+        ItemType            = base:normal,
+        DisplayName         = Paperboy,
+        Weight              = 0.04,
+        Icon                = PZEMU_GG_Cart_Paperboy,
+        DisplayCategory     = Electronics,
+        Tags                = PZEMU_Cartridge;PZEMU_GG,
+    }
+
+    item GG_Cart_Shinobi
+    {
+        ItemType            = base:normal,
+        DisplayName         = The G.G. Shinobi,
+        Weight              = 0.04,
+        Icon                = PZEMU_GG_Cart_Shinobi,
+        DisplayCategory     = Electronics,
+        Tags                = PZEMU_Cartridge;PZEMU_GG,
+    }
+
+    item GG_Cart_Generic
+    {
+        ItemType            = base:normal,
+        DisplayName         = Game Gear Game,
+        Weight              = 0.04,
+        Icon                = PZEMU_GG_Cart,
+        DisplayCategory     = Electronics,
+        Tags                = PZEMU_Cartridge;PZEMU_GG,
+    }
+
+    /*************** MASTER SYSTEM CARTRIDGES ***************/
+
+    item SMS_Cart_Generic
+    {
+        ItemType            = base:normal,
+        DisplayName         = Master System Game,
+        Weight              = 0.08,
+        Icon                = PZEMU_SMS_Cart,
+        DisplayCategory     = Electronics,
+        Tags                = PZEMU_Cartridge;PZEMU_SMS,
+    }
+}

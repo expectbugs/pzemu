@@ -1,20 +1,128 @@
 --
--- PZEMUWindow.lua — Multi-console UI with console picker, ROM picker, and game panel
+-- PZEMUWindow.lua — Emulator UI with game picker, welcome screen, and game panel
 --
--- Five classes:
---   PZEMUGamePanel     — PZFBInputPanel subclass for emulator display + input
---   PZEMUConsolePicker — Console selection list
---   PZEMURomPicker     — ROM file selection list
---   PZEMUWelcome       — Instructions/controls screen (console-specific)
---   PZEMUWindow        — Main ISCollapsableWindow (singleton)
+-- Four classes:
+--   PZEMUGamePanel  — PZFBInputPanel subclass for emulator display + input
+--   PZEMUGamePicker — Cartridge-based game selection list
+--   PZEMUWelcome    — Instructions/controls screen (console-specific)
+--   PZEMUWindow     — Main ISCollapsableWindow (singleton)
 --
 
 require "PZFB/PZFBInput"
 require "PZEMU/PZEMUGame"
 
--- Helper used by ROM picker for "No ROMs found" path
+-- Helper: user data directory
 local function getUserDir()
     return Core.getMyDocumentFolder() .. getFileSeparator() .. "PZEMU"
+end
+
+-- Helper: convert Roman numeral suffixes to Arabic for matching
+-- Handles _IV, _III, _II at end of name or before another _
+local function romanToArabic(name)
+    -- Order matters: check longer numerals first
+    name = string.gsub(name, "_iv$", "_4")
+    name = string.gsub(name, "_iv_", "_4_")
+    name = string.gsub(name, "_iii$", "_3")
+    name = string.gsub(name, "_iii_", "_3_")
+    name = string.gsub(name, "_ii$", "_2")
+    name = string.gsub(name, "_ii_", "_2_")
+    return name
+end
+
+-- Helper: normalize a ROM filename for fuzzy matching
+-- Strips region codes (U), version tags (V1.0), dump flags [!], trailing _/.,
+-- apostrophes, commas, internal periods. Converts Roman numerals to Arabic.
+local function normalizeRomName(filename)
+    -- Remove file extension
+    local name = string.gsub(filename, "%.[^%.]+$", "")
+    -- Strip everything from first ( or [ to end of string
+    name = string.gsub(name, "%s*[%(].*$", "")
+    name = string.gsub(name, "%s*%[.*$", "")
+    -- Strip trailing underscores and periods
+    name = string.gsub(name, "[_%s%.]+$", "")
+    -- Strip apostrophes and commas
+    name = string.gsub(name, "'", "")
+    name = string.gsub(name, ",", "")
+    -- Strip internal periods (like "Bros." -> "Bros")
+    name = string.gsub(name, "%.", "")
+    -- Lowercase for case-insensitive matching
+    name = string.lower(name)
+    -- Convert Roman numerals to Arabic (II->2, III->3, IV->4)
+    name = romanToArabic(name)
+    return name
+end
+
+-- Helper: get the file extension from a filename
+local function getExtension(filename)
+    return string.match(filename, "(%.[^%.]+)$") or ""
+end
+
+-- Helper: fuzzy-match a ROM in a directory
+-- Scans the directory for files with matching extension whose normalized name
+-- matches the normalized expected name.
+local function fuzzyFindRom(dirPath, romFile, extensions)
+    local listing = PZFB.listDir(dirPath)
+    if not listing or listing == "" then return nil end
+
+    local expectedBase = normalizeRomName(romFile)
+    local expectedExt = string.lower(getExtension(romFile))
+    local sep = getFileSeparator()
+
+    for line in string.gmatch(listing, "[^\n]+") do
+        local fileExt = string.lower(getExtension(line))
+        -- Check if extension matches (could be .nes, .smc, .bin, etc.)
+        local extMatch = false
+        if fileExt == expectedExt then
+            extMatch = true
+        elseif extensions then
+            for _, ext in ipairs(extensions) do
+                if fileExt == ext then
+                    extMatch = true
+                    break
+                end
+            end
+        end
+        if extMatch then
+            local fileBase = normalizeRomName(line)
+            if fileBase == expectedBase then
+                return dirPath .. sep .. line
+            end
+        end
+    end
+    return nil
+end
+
+-- Helper: resolve ROM path — exact match first, then fuzzy match
+local function resolveRomPath(console, romFile)
+    local sep = getFileSeparator()
+    local userRomDir = getUserDir() .. sep .. "roms" .. sep .. console.romDir
+
+    -- 1. Exact match in user ROM dir
+    local exactPath = userRomDir .. sep .. romFile
+    if PZFB.fileSize(exactPath) > 0 then return exactPath end
+
+    -- 2. Fuzzy match in user ROM dir
+    local fuzzyPath = fuzzyFindRom(userRomDir, romFile, console.romExtensions)
+    if fuzzyPath then return fuzzyPath end
+
+    -- 3. Bundled ROMs from mod directory (exact only — bundled names are controlled)
+    local modInfo = getModInfoByID("PZEMU")
+    if modInfo then
+        local dir = modInfo:getDir()
+        if dir then
+            local p = dir .. sep .. "media" .. sep .. "pzemu" .. sep .. "roms" .. sep .. console.romDir .. sep .. romFile
+            if PZFB.fileSize(p) > 0 then return p end
+            p = dir .. sep .. "42" .. sep .. "media" .. sep .. "pzemu" .. sep .. "roms" .. sep .. console.romDir .. sep .. romFile
+            if PZFB.fileSize(p) > 0 then return p end
+        end
+        local ok, vdir = pcall(function() return modInfo:getVersionDir() end)
+        if ok and vdir then
+            local p = vdir .. sep .. "media" .. sep .. "pzemu" .. sep .. "roms" .. sep .. console.romDir .. sep .. romFile
+            if PZFB.fileSize(p) > 0 then return p end
+        end
+    end
+
+    return nil
 end
 
 -- ============================================================================
@@ -74,7 +182,7 @@ function PZEMUGamePanel:onPZFBGamepadUp(slot, button)
     end
 end
 
--- Analog stick → D-pad conversion for consoles without analog support
+-- Analog stick -> D-pad conversion for consoles without analog support
 local STICK_DEADZONE = 0.5
 local stickState = { left = 0, right = 0, up = 0, down = 0 }
 
@@ -160,82 +268,29 @@ function PZEMUGamePanel:render()
 end
 
 -- ============================================================================
--- PZEMUConsolePicker — Console selection panel
+-- PZEMUGamePicker — Cartridge-based game selection panel
 -- ============================================================================
 
-PZEMUConsolePicker = ISPanel:derive("PZEMUConsolePicker")
+PZEMUGamePicker = ISPanel:derive("PZEMUGamePicker")
 
-function PZEMUConsolePicker:new(x, y, w, h, onSelect)
+function PZEMUGamePicker:new(x, y, w, h, onSelect)
     local o = ISPanel.new(self, x, y, w, h)
     o.onSelect = onSelect
     o.buttons = {}
-    o.consoles = {}
-    return o
-end
-
-function PZEMUConsolePicker:createChildren()
-    ISPanel.createChildren(self)
-    self.consoles = PZEMUGame.getConsoles()
-
-    local y = 50
-    for i, console in ipairs(self.consoles) do
-        local label = console.displayName .. "  (" .. tostring(console.year) .. ")"
-        local btnW = math.min(300, self.width - 40)
-        local btnX = math.floor((self.width - btnW) / 2)
-        local btn = ISButton:new(btnX, y, btnW, 30, label, self, PZEMUConsolePicker.onBtnClick)
-        btn:initialise()
-        btn:instantiate()
-        btn.internal = "CON_" .. tostring(i)
-        btn.consoleIndex = i
-        btn.borderColor = { r = 0.3, g = 0.5, b = 0.3, a = 0.6 }
-        btn.backgroundColor = { r = 0.08, g = 0.12, b = 0.08, a = 0.8 }
-        btn.textColor = { r = 0.9, g = 1.0, b = 0.9, a = 1.0 }
-        self:addChild(btn)
-        table.insert(self.buttons, btn)
-        y = y + 34
-    end
-end
-
-function PZEMUConsolePicker:onBtnClick(button)
-    local console = self.consoles[button.consoleIndex]
-    if console and self.onSelect then
-        self.onSelect(console)
-    end
-end
-
-function PZEMUConsolePicker:prerender()
-    ISPanel.prerender(self)
-    self:drawRect(0, 0, self.width, self.height, 0.95, 0.05, 0.05, 0.08)
-end
-
-function PZEMUConsolePicker:render()
-    ISPanel.render(self)
-    local title = "Select a Console"
-    local titleW = getTextManager():MeasureStringX(UIFont.Large, title)
-    self:drawText(title, math.floor((self.width - titleW) / 2), 12, 1, 1, 1, 0.9, UIFont.Large)
-end
-
--- ============================================================================
--- PZEMURomPicker — ROM selection panel
--- ============================================================================
-
-PZEMURomPicker = ISPanel:derive("PZEMURomPicker")
-
-function PZEMURomPicker:new(x, y, w, h, onSelect)
-    local o = ISPanel.new(self, x, y, w, h)
-    o.onSelect = onSelect
-    o.buttons = {}
-    o.roms = {}
+    o.cartridgeList = {}
     o.console = nil
+    o.missingRomName = nil
     return o
 end
 
-function PZEMURomPicker:createChildren()
+function PZEMUGamePicker:createChildren()
     ISPanel.createChildren(self)
 end
 
-function PZEMURomPicker:refresh(console)
+function PZEMUGamePicker:refresh(console, cartridgeList)
     self.console = console
+    self.cartridgeList = cartridgeList or {}
+    self.missingRomName = nil
 
     -- Remove old buttons
     for _, btn in ipairs(self.buttons) do
@@ -243,25 +298,14 @@ function PZEMURomPicker:refresh(console)
     end
     self.buttons = {}
 
-    self.roms = PZEMUGame.findRoms(console)
-
     local yOff = 50
-    for i, rom in ipairs(self.roms) do
-        -- Strip extension for display
-        local displayName = rom.name
-        for _, ext in ipairs(console.romExtensions) do
-            local extLen = #ext
-            if string.sub(string.lower(displayName), -extLen) == ext then
-                displayName = string.sub(displayName, 1, -extLen - 1)
-                break
-            end
-        end
-
-        local btn = ISButton:new(20, yOff, self.width - 40, 28, displayName, self, PZEMURomPicker.onRomClick)
+    for i, cart in ipairs(self.cartridgeList) do
+        local label = cart.gameName or "Unknown Game"
+        local btn = ISButton:new(20, yOff, self.width - 40, 28, label, self, PZEMUGamePicker.onGameClick)
         btn:initialise()
         btn:instantiate()
-        btn.internal = "ROM_" .. tostring(i)
-        btn.romIndex = i
+        btn.internal = "GAME_" .. tostring(i)
+        btn.gameIndex = i
         btn.borderColor = { r = 0.4, g = 0.4, b = 0.4, a = 0.6 }
         btn.backgroundColor = { r = 0.1, g = 0.1, b = 0.15, a = 0.8 }
         btn.textColor = { r = 0.9, g = 0.9, b = 0.9, a = 1.0 }
@@ -271,31 +315,46 @@ function PZEMURomPicker:refresh(console)
     end
 end
 
-function PZEMURomPicker:onRomClick(button)
-    local rom = self.roms[button.romIndex]
-    if rom and self.onSelect then
-        self.onSelect(rom)
+function PZEMUGamePicker:onGameClick(button)
+    local cart = self.cartridgeList[button.gameIndex]
+    if not cart then return end
+
+    -- Resolve ROM path
+    local romPath = resolveRomPath(self.console, cart.romFile)
+    if romPath then
+        self.missingRomName = nil
+        if self.onSelect then
+            self.onSelect(romPath)
+        end
+    else
+        -- ROM not found — show message
+        self.missingRomName = cart.romFile
     end
 end
 
-function PZEMURomPicker:prerender()
+function PZEMUGamePicker:prerender()
     ISPanel.prerender(self)
     self:drawRect(0, 0, self.width, self.height, 0.95, 0.05, 0.05, 0.08)
 end
 
-function PZEMURomPicker:render()
+function PZEMUGamePicker:render()
     ISPanel.render(self)
 
     local consoleName = self.console and self.console.displayName or "?"
-    local title = consoleName .. " — Select a ROM"
+    local title = consoleName .. " — Select a Game"
     self:drawText(title, 20, 12, 1, 1, 1, 0.9, UIFont.Medium)
 
-    if #self.roms == 0 then
+    if #self.cartridgeList == 0 then
+        self:drawText("No cartridges found nearby.", 20, 60, 0.8, 0.6, 0.6, 0.8, UIFont.Small)
+    end
+
+    if self.missingRomName then
+        local y = self.height - 80
+        self:drawText("ROM not found:", 20, y, 1, 0.4, 0.4, 0.9, UIFont.Small)
+        self:drawText(self.missingRomName, 20, y + 18, 0.5, 0.7, 0.5, 0.8, UIFont.Small)
         local sep = getFileSeparator()
         local romDir = getUserDir() .. sep .. "roms" .. sep .. (self.console and self.console.romDir or "")
-        self:drawText("No ROMs found.", 20, 60, 0.8, 0.6, 0.6, 0.8, UIFont.Small)
-        self:drawText("Place ROM files in:", 20, 80, 0.6, 0.6, 0.6, 0.7, UIFont.Small)
-        self:drawText(romDir, 20, 100, 0.5, 0.7, 0.5, 0.7, UIFont.Small)
+        self:drawText("Place ROM in: " .. romDir, 20, y + 36, 0.5, 0.5, 0.5, 0.7, UIFont.Small)
     end
 end
 
@@ -393,32 +452,20 @@ function PZEMUWindow:createChildren()
 
     self.game = nil
     self.selectedConsole = nil
-    self.selectedRom = nil
+    self.pendingRomPath = nil
 
-    -- Console picker (visible initially)
-    self.consolePicker = PZEMUConsolePicker:new(0, th, panelW, panelH, function(console)
-        self:onConsoleSelected(console)
+    -- Game picker (visible initially when opened via openWithContext)
+    self.gamePicker = PZEMUGamePicker:new(0, th, panelW, panelH, function(romPath)
+        self:onGameSelected(romPath)
     end)
-    self.consolePicker.anchorLeft = true
-    self.consolePicker.anchorRight = true
-    self.consolePicker.anchorTop = true
-    self.consolePicker.anchorBottom = true
-    self.consolePicker:initialise()
-    self.consolePicker:instantiate()
-    self:addChild(self.consolePicker)
-
-    -- ROM picker (hidden)
-    self.romPicker = PZEMURomPicker:new(0, th, panelW, panelH, function(rom)
-        self:onRomSelected(rom)
-    end)
-    self.romPicker.anchorLeft = true
-    self.romPicker.anchorRight = true
-    self.romPicker.anchorTop = true
-    self.romPicker.anchorBottom = true
-    self.romPicker:initialise()
-    self.romPicker:instantiate()
-    self.romPicker:setVisible(false)
-    self:addChild(self.romPicker)
+    self.gamePicker.anchorLeft = true
+    self.gamePicker.anchorRight = true
+    self.gamePicker.anchorTop = true
+    self.gamePicker.anchorBottom = true
+    self.gamePicker:initialise()
+    self.gamePicker:instantiate()
+    self.gamePicker:setVisible(false)
+    self:addChild(self.gamePicker)
 
     -- Welcome panel (hidden)
     self.welcomePanel = PZEMUWelcome:new(0, th, panelW, panelH, function()
@@ -449,24 +496,16 @@ function PZEMUWindow:createChildren()
     if self.resizeWidget2 then self.resizeWidget2:bringToTop() end
 end
 
-function PZEMUWindow:onConsoleSelected(console)
+function PZEMUWindow:setupConsole(console)
     self.selectedConsole = console
-    self.consolePicker:setVisible(false)
-
-    -- Create game object for selected console
     self.game = PZEMUGame:new(console)
     self.gamePanel:setGame(self.game)
-
-    -- Refresh ROM picker for this console
-    self.romPicker:refresh(console)
-    self.romPicker:setVisible(true)
-
     self:setTitle(console.displayName .. " Emulator")
 end
 
-function PZEMUWindow:onRomSelected(rom)
-    self.selectedRom = rom
-    self.romPicker:setVisible(false)
+function PZEMUWindow:onGameSelected(romPath)
+    self.pendingRomPath = romPath
+    self.gamePicker:setVisible(false)
     self.welcomePanel:setConsole(self.selectedConsole)
     self.welcomePanel:setVisible(true)
 end
@@ -474,7 +513,7 @@ end
 function PZEMUWindow:onWelcomeDismissed()
     self.welcomePanel:setVisible(false)
     self.gamePanel:setVisible(true)
-    self.game:start(self.selectedRom.path)
+    self.game:start(self.pendingRomPath)
     self.gamePanel:grabInput()
 end
 
@@ -489,10 +528,13 @@ function PZEMUWindow:close()
     ISCollapsableWindow.close(self)
 end
 
-function PZEMUWindow.open()
+-- ============================================================================
+-- Public openers — called from PZEMUMain context menu callbacks
+-- ============================================================================
+
+local function createWindow()
     if PZEMUWindow.instance then
-        PZEMUWindow.instance:bringToTop()
-        return
+        PZEMUWindow.instance:close()
     end
 
     local screenW = getCore():getScreenWidth()
@@ -507,9 +549,33 @@ function PZEMUWindow.open()
     window.minimumHeight = 280
     window:initialise()
     window:instantiate()
-    window:setTitle("Retro Console Emulator")
     window:setResizable(true)
     window:addToUIManager()
 
     PZEMUWindow.instance = window
+    return window
+end
+
+-- Open with game picker showing available cartridges
+function PZEMUWindow.openWithContext(console, cartridgeList)
+    local window = createWindow()
+    window:setupConsole(console)
+    window.gamePicker:refresh(console, cartridgeList)
+    window.gamePicker:setVisible(true)
+end
+
+-- Open directly to a specific game (from cartridge right-click)
+function PZEMUWindow.openWithGame(console, gameData)
+    local romPath = resolveRomPath(console, gameData.romFile)
+    if not romPath then
+        -- Fall back to game picker with just this one game
+        PZEMUWindow.openWithContext(console, { gameData })
+        return
+    end
+
+    local window = createWindow()
+    window:setupConsole(console)
+    window.pendingRomPath = romPath
+    window.welcomePanel:setConsole(console)
+    window.welcomePanel:setVisible(true)
 end

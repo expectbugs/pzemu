@@ -1,5 +1,67 @@
 # Changelog
 
+## [0.5.0] - 2026-04-12
+
+### Added
+- **Full Windows support** — cross-compiled bridge binary (MinGW), Windows libretro core DLLs, SDL2.dll auto-deployment
+- **220 games across 7 systems** — NES (58), SNES (72), Genesis (29), GB (39), Atari 2600 (9), Game Gear (10), SMS (4)
+- **31 new named cartridge items** with dedicated VGC/SEGA addon icons
+  - Genesis: 22 new (Altered Beast, Streets of Rage 1&2, Sonic 2, Strider, TMNT, and more)
+  - SNES: Star Fox, Secret of Mana, NBA Jam
+  - Game Gear: Klax, OutRun Europa, Paperboy, The G.G. Shinobi
+  - Game Boy: Final Fantasy Legend
+  - Atari: Ms. Pac-Man
+- Workshop preview.png for Steam Workshop publishing
+- ROM directory instructions and Retrode recommendation in mod description
+
+### Fixed
+- **TV power detection** — uses `hasGridPower()` in addition to `haveElectricity()` to detect both grid and generator power (verified from ISVehicleMenu.lua and ISWorldObjectContextMenu.lua)
+- **Player inventory scanning** — uses `getAllEvalRecurse()` to search bags, pockets, and all sub-containers (not just root inventory)
+- **Fuzzy ROM matching** — normalizes filenames by stripping region codes, version tags, dump flags, apostrophes, and converting Roman numerals (II→2, III→3, IV→4) for matching against common ROM naming conventions
+- **Context menu safety** — inventory handler wrapped in pcall to prevent errors from breaking PZ's context menu system
+- Donkey Kong Country and Mega Man X romFile names updated to match common ROM dump naming (_1 suffix)
+- Added Final Fantasy: Mystic Quest to SNES game pool
+
+## [0.4.0] - 2026-04-12
+
+### Added
+- **Lootable console and cartridge items** — 7 console types and ~30 named cartridges as PZ items
+  - NES, SNES, Genesis, Game Boy, Atari 2600, Game Gear, Master System
+  - Named cartridges with dedicated VGC-sourced icons (Mario, Zelda, Sonic, Tetris, etc.)
+  - Generic cartridges with randomized game names from weighted pools
+- **Wealth-based loot distribution** — consoles spawn in contextually appropriate locations
+  - NES ubiquitous in kids' bedrooms and living rooms
+  - SNES more common in wealthy homes, rare in poor
+  - Atari 2600 found in garages and closets (obsolete by 1993)
+  - Game Boy in school lockers and kids' rooms
+  - Game Gear rare (expensive handheld)
+  - Master System rare in US market
+- **Cartridge spawning via OnFillContainer** — cartridges appear alongside their consoles
+  - 3-7 games per console, 15% chance of 8+ bonus games
+  - Must-have game always included (Mario with NES, Sonic with Genesis, Tetris with Game Boy)
+  - Weighted rarity: common games (Mario) nearly universal, rare games (Dragon Warrior IV) very scarce
+- **Three context menu entry points**
+  - Right-click TV: "Play NES", "Play SNES", etc. for each nearby console (requires power)
+  - Right-click console item: "Play <Console>" if powered TV nearby (or battery for handhelds)
+  - Right-click cartridge: "Play <Game>" launches directly
+- **Proximity detection** — 8-tile range scan for consoles, cartridges, and TVs
+  - Checks player inventory, world objects on ground, and items in nearby containers
+- **Power requirements** — stationary consoles require a powered TV within range
+- **Handheld battery drain** — Game Boy and Game Gear use Drainable item type
+- **Mood effects** — playing reduces stress, boredom, and unhappiness over time
+- **ROM-not-found message** — shows exact filename and directory path when ROM is missing
+- Console and cartridge icon textures sourced from VGC Workshop mod (MIT licensed)
+
+### Changed
+- Context menu now shows per-console options instead of generic "Play Console"
+- Game selection shows nearby cartridges instead of filesystem ROM scan
+- Window opens from context menu with console pre-selected
+- Mod name updated to "REAL Zomboid Console Emulation"
+
+### Removed
+- Console picker UI panel (console selection now via context menu)
+- Filesystem ROM scanning (replaced by cartridge-based game selection)
+
 ## [0.3.0] - 2026-04-12
 
 ### Added

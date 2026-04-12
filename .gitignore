@@ -21,8 +21,8 @@ cores/
 # ROMs (user-provided, NOT for distribution — project root only)
 /roms/
 
-# Packaged .dat files in mod (built from source, not checked in)
-mod/PZEMU/42/media/pzemu/*.dat
+# Build artifacts in bridge directory (not the packaged .dat files in mod)
+bridge/pzemu-bridge.exe
 
 # OS junk
 .DS_Store
