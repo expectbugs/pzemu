@@ -108,7 +108,7 @@ end
 PZEMURomPicker = ISPanel:derive("PZEMURomPicker")
 
 function PZEMURomPicker:new(x, y, w, h, onSelect)
-    local o = ISPanel:new(x, y, w, h)
+    local o = ISPanel.new(self, x, y, w, h)
     o.onSelect = onSelect
     o.buttons = {}
     o.roms = {}
@@ -183,7 +183,7 @@ end
 PZEMUWelcome = ISPanel:derive("PZEMUWelcome")
 
 function PZEMUWelcome:new(x, y, w, h, onDismiss)
-    local o = ISPanel:new(x, y, w, h)
+    local o = ISPanel.new(self, x, y, w, h)
     o.onDismiss = onDismiss
     o.tickCount = 0
     return o
