@@ -21,7 +21,10 @@
 - NES support via FCEUmm libretro core (256x224, XRGB8888)
 - 3 bundled free homebrew ROMs (Chase, LAN Master, Zooming Secretary)
 - NES key mapping: Z=B, X=A, Arrows=D-pad, Enter=Start, RShift=Select
-- Scroll Lock toggles input lock, ESC releases capture and sends Start (pause)
+- Scroll Lock toggles input lock
+- ESC freezes/unfreezes emulation (stops retro_run, mutes audio)
+- F5 saves emulator state to .state file, F9 loads it
+- Meta-command protocol: keycode >= 16 triggers bridge-side actions (pause, save/load state)
 
 ### Fixed
 - ISPanel constructor calls used colon syntax (`ISPanel:new()`) instead of dot syntax (`ISPanel.new(self, ...)`), causing ROM picker and welcome panels to render as plain black panels with no content
