@@ -1,0 +1,483 @@
+module PZEMU
+{
+    imports
+    {
+        Base
+    }
+
+    /**** CONSOLES ****/
+
+    model PZEMU_NES_Main
+    {
+        mesh        = WorldItems/NES_Main,
+        texture     = WorldItems/NES_Main,
+        scale       = 1,
+    }
+
+    model PZEMU_SNES_Main
+    {
+        mesh        = WorldItems/SNES_Main,
+        texture     = WorldItems/SNES_Main,
+        scale       = 1,
+    }
+
+    model PZEMU_Genesis_Main
+    {
+        mesh        = WorldItems/Genesis_Main,
+        texture     = WorldItems/Genesis_Main,
+        scale       = 1,
+    }
+
+    model PZEMU_GameBoy_Main
+    {
+        mesh        = WorldItems/GameBoy_Main,
+        texture     = WorldItems/GameBoy_Main,
+        scale       = 1,
+    }
+
+    model PZEMU_Atari_Main
+    {
+        mesh        = WorldItems/Atari_Main,
+        texture     = WorldItems/Atari_Main,
+        scale       = 1,
+    }
+
+    model PZEMU_GameGear_Main
+    {
+        mesh        = WorldItems/Game_Gear_Main,
+        texture     = WorldItems/GG_Main,
+        scale       = 0.1,
+    }
+
+    /**** NES CARTRIDGES ****/
+
+    model PZEMU_NES_Cart_Mario
+    {
+        mesh        = WorldItems/NES_Cartridge,
+        texture     = WorldItems/NES_Cartridge_Mario3,
+        scale       = 1,
+    }
+
+    model PZEMU_NES_Cart_Zelda
+    {
+        mesh        = WorldItems/NES_Cartridge,
+        texture     = WorldItems/NES_Cartridge_ZeldaG,
+        scale       = 1,
+    }
+
+    model PZEMU_NES_Cart_Contra
+    {
+        mesh        = WorldItems/NES_Cartridge,
+        texture     = WorldItems/NES_Cartridge_Contra,
+        scale       = 1,
+    }
+
+    model PZEMU_NES_Cart_MegaMan
+    {
+        mesh        = WorldItems/NES_Cartridge,
+        texture     = WorldItems/NES_Cartridge_MegaMan2,
+        scale       = 1,
+    }
+
+    model PZEMU_NES_Cart_Metroid
+    {
+        mesh        = WorldItems/NES_Cartridge,
+        texture     = WorldItems/NES_Cartridge_Metroid,
+        scale       = 1,
+    }
+
+    model PZEMU_NES_Cart
+    {
+        mesh        = WorldItems/NES_Cartridge,
+        texture     = WorldItems/NES_Cartridge_SuperMarioBros,
+        scale       = 1,
+    }
+
+    /**** SNES CARTRIDGES ****/
+
+    model PZEMU_SNES_Cart_MarioWorld
+    {
+        mesh        = WorldItems/SNES_Cartridge,
+        texture     = WorldItems/SNES_Cartridge_Mario,
+        scale       = 1,
+    }
+
+    model PZEMU_SNES_Cart_Zelda
+    {
+        mesh        = WorldItems/SNES_Cartridge,
+        texture     = WorldItems/SNES_Cartridge_Zelda,
+        scale       = 1,
+    }
+
+    model PZEMU_SNES_Cart_SF2
+    {
+        mesh        = WorldItems/SNES_Cartridge,
+        texture     = WorldItems/SNES_Cartridge_StreetFighter,
+        scale       = 1,
+    }
+
+    model PZEMU_SNES_Cart_MK2
+    {
+        mesh        = WorldItems/SNES_Cartridge,
+        texture     = WorldItems/SNES_Cartridge_MK2,
+        scale       = 1,
+    }
+
+    model PZEMU_SNES_Cart_StarFox
+    {
+        mesh        = WorldItems/SNES_Cartridge,
+        texture     = WorldItems/SNES_Cartridge_Fox,
+        scale       = 1,
+    }
+
+    model PZEMU_SNES_Cart_SecretOfMana
+    {
+        mesh        = WorldItems/SNES_Cartridge,
+        texture     = WorldItems/SNES_Cartridge_Mana,
+        scale       = 1,
+    }
+
+    model PZEMU_SNES_Cart_NBAJam
+    {
+        mesh        = WorldItems/SNES_Cartridge,
+        texture     = WorldItems/SNES_Cartridge_NBA,
+        scale       = 1,
+    }
+
+    model PZEMU_SNES_Cart
+    {
+        mesh        = WorldItems/SNES_Cartridge,
+        texture     = WorldItems/SNES_Cartridge_Mario,
+        scale       = 1,
+    }
+
+    /**** GENESIS CARTRIDGES ****/
+
+    model PZEMU_Genesis_Cart_Sonic
+    {
+        mesh        = WorldItems/Genesis_Cartridge,
+        texture     = WorldItems/Genesis_Cartridge_sonic,
+        scale       = 1,
+    }
+
+    model PZEMU_Genesis_Cart_GoldenAxe
+    {
+        mesh        = WorldItems/Genesis_Cartridge,
+        texture     = WorldItems/Genesis_Cartridge_gaxe,
+        scale       = 1,
+    }
+
+    model PZEMU_Genesis_Cart_Aladdin
+    {
+        mesh        = WorldItems/Genesis_Cartridge,
+        texture     = WorldItems/Genesis_Cartridge_aladdin,
+        scale       = 1,
+    }
+
+    model PZEMU_Genesis_Cart_SF2
+    {
+        mesh        = WorldItems/Genesis_Cartridge,
+        texture     = WorldItems/Genesis_Cartridge_street,
+        scale       = 1,
+    }
+
+    model PZEMU_Genesis_Cart_AlteredBeast
+    {
+        mesh        = WorldItems/Genesis_Cartridge,
+        texture     = WorldItems/Genesis_Cartridge_AlteredBeast,
+        scale       = 1,
+    }
+
+    model PZEMU_Genesis_Cart_DesertStrike
+    {
+        mesh        = WorldItems/Genesis_Cartridge,
+        texture     = WorldItems/Genesis_Cartridge_DesertStrike,
+        scale       = 1,
+    }
+
+    model PZEMU_Genesis_Cart_FatalFury
+    {
+        mesh        = WorldItems/Genesis_Cartridge,
+        texture     = WorldItems/Genesis_Cartridge_FatalFury,
+        scale       = 1,
+    }
+
+    model PZEMU_Genesis_Cart_GoldenAxe2
+    {
+        mesh        = WorldItems/Genesis_Cartridge,
+        texture     = WorldItems/Genesis_Cartridge_GoldenAxe2,
+        scale       = 1,
+    }
+
+    model PZEMU_Genesis_Cart_GhoulsNGhosts
+    {
+        mesh        = WorldItems/Genesis_Cartridge,
+        texture     = WorldItems/Genesis_Cartridge_ghouls,
+        scale       = 1,
+    }
+
+    model PZEMU_Genesis_Cart_HerzogZwei
+    {
+        mesh        = WorldItems/Genesis_Cartridge,
+        texture     = WorldItems/Genesis_Cartridge_HerzogZwei,
+        scale       = 1,
+    }
+
+    model PZEMU_Genesis_Cart_LighteningForce
+    {
+        mesh        = WorldItems/Genesis_Cartridge,
+        texture     = WorldItems/Genesis_Cartridge_LighteningForce,
+        scale       = 1,
+    }
+
+    model PZEMU_Genesis_Cart_Moonwalker
+    {
+        mesh        = WorldItems/Genesis_Cartridge,
+        texture     = WorldItems/Genesis_Cartridge_Moonwalker,
+        scale       = 1,
+    }
+
+    model PZEMU_Genesis_Cart_OutRun
+    {
+        mesh        = WorldItems/Genesis_Cartridge,
+        texture     = WorldItems/Genesis_Cartridge_OutRun,
+        scale       = 1,
+    }
+
+    model PZEMU_Genesis_Cart_PhantasyStar3
+    {
+        mesh        = WorldItems/Genesis_Cartridge,
+        texture     = WorldItems/Genesis_Cartridge_PhantasyStar3,
+        scale       = 1,
+    }
+
+    model PZEMU_Genesis_Cart_QuackShot
+    {
+        mesh        = WorldItems/Genesis_Cartridge,
+        texture     = WorldItems/Genesis_Cartridge_QuackShot,
+        scale       = 1,
+    }
+
+    model PZEMU_Genesis_Cart_RoadRash2
+    {
+        mesh        = WorldItems/Genesis_Cartridge,
+        texture     = WorldItems/Genesis_Cartridge_RoadRash2,
+        scale       = 1,
+    }
+
+    model PZEMU_Genesis_Cart_RollingThunder2
+    {
+        mesh        = WorldItems/Genesis_Cartridge,
+        texture     = WorldItems/Genesis_Cartridge_RollingThunder2,
+        scale       = 1,
+    }
+
+    model PZEMU_Genesis_Cart_ShadowDancer
+    {
+        mesh        = WorldItems/Genesis_Cartridge,
+        texture     = WorldItems/Genesis_Cartridge_ShadowDancer,
+        scale       = 1,
+    }
+
+    model PZEMU_Genesis_Cart_RevengeOfShinobi
+    {
+        mesh        = WorldItems/Genesis_Cartridge,
+        texture     = WorldItems/Genesis_Cartridge_Shinobi,
+        scale       = 1,
+    }
+
+    model PZEMU_Genesis_Cart_Sonic2
+    {
+        mesh        = WorldItems/Genesis_Cartridge,
+        texture     = WorldItems/Genesis_Cartridge_Sonic2,
+        scale       = 1,
+    }
+
+    model PZEMU_Genesis_Cart_SpaceHarrier2
+    {
+        mesh        = WorldItems/Genesis_Cartridge,
+        texture     = WorldItems/Genesis_Cartridge_SpaceHarrier2,
+        scale       = 1,
+    }
+
+    model PZEMU_Genesis_Cart_Splatterhouse2
+    {
+        mesh        = WorldItems/Genesis_Cartridge,
+        texture     = WorldItems/Genesis_Cartridge_Splatterhouse2,
+        scale       = 1,
+    }
+
+    model PZEMU_Genesis_Cart_StreetsOfRage
+    {
+        mesh        = WorldItems/Genesis_Cartridge,
+        texture     = WorldItems/Genesis_Cartridge_StreetsOfRage,
+        scale       = 1,
+    }
+
+    model PZEMU_Genesis_Cart_StreetsOfRage2
+    {
+        mesh        = WorldItems/Genesis_Cartridge,
+        texture     = WorldItems/Genesis_Cartridge_StreetsOfRage2,
+        scale       = 1,
+    }
+
+    model PZEMU_Genesis_Cart_Strider
+    {
+        mesh        = WorldItems/Genesis_Cartridge,
+        texture     = WorldItems/Genesis_Cartridge_Strider,
+        scale       = 1,
+    }
+
+    model PZEMU_Genesis_Cart_TMNTHH
+    {
+        mesh        = WorldItems/Genesis_Cartridge,
+        texture     = WorldItems/Genesis_Cartridge_TMNTHH,
+        scale       = 1,
+    }
+
+    model PZEMU_Genesis_Cart
+    {
+        mesh        = WorldItems/Genesis_Cartridge,
+        texture     = WorldItems/Genesis_Cartridge_sonic,
+        scale       = 1,
+    }
+
+    /**** GB CARTRIDGES ****/
+
+    model PZEMU_GB_Cart_Tetris
+    {
+        mesh        = WorldItems/GB_Cartridge,
+        texture     = WorldItems/GB_Cartridge_Tetris,
+        scale       = 1,
+    }
+
+    model PZEMU_GB_Cart_Mario
+    {
+        mesh        = WorldItems/GB_Cartridge,
+        texture     = WorldItems/GB_Cartridge_Mario,
+        scale       = 1,
+    }
+
+    model PZEMU_GB_Cart_Zelda
+    {
+        mesh        = WorldItems/GB_Cartridge,
+        texture     = WorldItems/GB_Cartridge_Zelda,
+        scale       = 1,
+    }
+
+    model PZEMU_GB_Cart_Kirby
+    {
+        mesh        = WorldItems/GB_Cartridge,
+        texture     = WorldItems/GB_Cartridge_Kirby,
+        scale       = 1,
+    }
+
+    model PZEMU_GB_Cart_FinalFantasyLegend
+    {
+        mesh        = WorldItems/GB_Cartridge,
+        texture     = WorldItems/GB_Cartridge_Fantasy,
+        scale       = 1,
+    }
+
+    model PZEMU_GB_Cart
+    {
+        mesh        = WorldItems/GB_Cartridge,
+        texture     = WorldItems/GB_Cartridge_Tetris,
+        scale       = 1,
+    }
+
+    /**** ATARI CARTRIDGES ****/
+
+    model PZEMU_Atari_Cart_Combat
+    {
+        mesh        = WorldItems/Atari_Cartridge,
+        texture     = WorldItems/Atari_Cartridge_Combat,
+        scale       = 1,
+    }
+
+    model PZEMU_Atari_Cart_Asteroids
+    {
+        mesh        = WorldItems/Atari_Cartridge,
+        texture     = WorldItems/Atari_Cartridge_Asteroids,
+        scale       = 1,
+    }
+
+    model PZEMU_Atari_Cart_Pitfall
+    {
+        mesh        = WorldItems/Atari_Cartridge,
+        texture     = WorldItems/Atari_Cartridge_Pitfall,
+        scale       = 1,
+    }
+
+    model PZEMU_Atari_Cart_SpaceInvaders
+    {
+        mesh        = WorldItems/Atari_Cartridge,
+        texture     = WorldItems/Atari_Cartridge_Spaceinvaders,
+        scale       = 1,
+    }
+
+    model PZEMU_Atari_Cart_MsPacMan
+    {
+        mesh        = WorldItems/Atari_Cartridge,
+        texture     = WorldItems/Atari_Cartridge_MSPacman,
+        scale       = 1,
+    }
+
+    model PZEMU_Atari_Cart
+    {
+        mesh        = WorldItems/Atari_Cartridge,
+        texture     = WorldItems/Atari_Cartridge_Combat,
+        scale       = 1,
+    }
+
+    /**** GG CARTRIDGES ****/
+
+    model PZEMU_GG_Cart_Sonic
+    {
+        mesh        = WorldItems/GG_Cartridge,
+        texture     = WorldItems/GG_Cartridge_Sonic,
+        scale       = 0.1,
+    }
+
+    model PZEMU_GG_Cart_Columns
+    {
+        mesh        = WorldItems/GG_Cartridge,
+        texture     = WorldItems/GG_Cartridge_Columns,
+        scale       = 0.1,
+    }
+
+    model PZEMU_GG_Cart_Klax
+    {
+        mesh        = WorldItems/GG_Cartridge,
+        texture     = WorldItems/GG_Cartridge_Klax,
+        scale       = 0.1,
+    }
+
+    model PZEMU_GG_Cart_OutRun
+    {
+        mesh        = WorldItems/GG_Cartridge,
+        texture     = WorldItems/GG_Cartridge_OutRun,
+        scale       = 0.1,
+    }
+
+    model PZEMU_GG_Cart_Paperboy
+    {
+        mesh        = WorldItems/GG_Cartridge,
+        texture     = WorldItems/GG_Cartridge_Paperboy,
+        scale       = 0.1,
+    }
+
+    model PZEMU_GG_Cart_Shinobi
+    {
+        mesh        = WorldItems/GG_Cartridge,
+        texture     = WorldItems/GG_Cartridge_Shinobi1,
+        scale       = 0.1,
+    }
+
+    model PZEMU_GG_Cart
+    {
+        mesh        = WorldItems/GG_Cartridge,
+        texture     = WorldItems/GG_Cartridge_Sonic,
+        scale       = 0.1,
+    }
+}
