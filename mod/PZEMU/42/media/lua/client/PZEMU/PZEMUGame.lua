@@ -518,15 +518,30 @@ function PZEMUGame:start(romPath)
     -- Create framebuffer (NEAREST filtering for pixel-perfect rendering)
     self.fb = PZFB.create(w, h)
 
-    -- Build extra args: core_path rom_path width height save_dir save_dir
+    -- Build extra args as a table: { core_path, rom_path, width, height, sys_dir, save_dir }
+    -- Using gameStartArgs (PZFB 1.7.0+) bypasses whitespace-split parsing, so paths
+    -- with spaces (e.g. Windows username "Adam Marzello"), apostrophes, or Unicode
+    -- pass through verbatim. Falls back to legacy gameStart on older PZFB.
     local sep = getFileSeparator()
     local saveDir = getUserDir() .. sep .. "saves" .. sep .. self.console.romDir
 
-    local extraArgs = self.corePath .. " " .. romPath .. " "
-        .. tostring(w) .. " " .. tostring(h)
-        .. " " .. saveDir .. " " .. saveDir
+    local argv = {
+        self.corePath,
+        romPath,
+        tostring(w),
+        tostring(h),
+        saveDir,
+        saveDir,
+    }
 
-    PZFB.gameStart(self.binaryPath, w, h, extraArgs)
+    if PZFB.gameStartArgs then
+        PZFB.gameStartArgs(self.binaryPath, w, h, argv)
+    else
+        -- Legacy fallback for users still on PZFB < 1.7.0
+        -- (will still break on paths with spaces; user must update PZFB)
+        local extraArgs = table.concat(argv, " ")
+        PZFB.gameStart(self.binaryPath, w, h, extraArgs)
+    end
     self.state = "STARTING"
     self.errorMsg = nil
 end

@@ -1,9 +1,9 @@
 name=REAL Zomboid Console Emulation
 id=PZEMU
 require=PZFB
-description=Collectible retro game consoles and cartridges. Find NES, SNES, Genesis, Game Boy, Atari 2600, Game Gear, and Master System consoles during loot runs. Play real retro games on in-game TVs powered by libretro emulation. Place your own legally obtained ROM files in your Zomboid/PZEMU/roms/ directories (nes/, snes/, genesis/, gb/, atari2600/, gg/, sms/). For dumping ROMs from original cartridges, we recommend the Retrode hardware device. Linux and Windows supported.
+description=Collectible retro game consoles and cartridges. Find NES, SNES, Genesis, Game Boy, Atari 2600, Game Gear, and Master System consoles during loot runs. Play real retro games on in-game TVs powered by libretro emulation. Place your own legally obtained ROM files in your Zomboid/PZEMU/roms/ directories (nes/, snes/, genesis/, gb/, atari2600/, gg/, sms/). For dumping ROMs from original cartridges, we recommend the Retrode hardware device. Linux and Windows supported. Multiplayer: each player runs their own emulator instance locally (frames are not network-synced). Both PZFB and PZEMU must be installed on every client. Requires PZFB 1.7.0 or newer for robust Windows path handling.
 url=https://github.com/expectbugs/pzemu
 poster=poster.png
 icon=icon.png
-modversion=0.5.0
+modversion=0.6.0
 versionMin=42.0

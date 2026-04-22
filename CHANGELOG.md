@@ -1,5 +1,22 @@
 # Changelog
 
+## [0.6.0] - 2026-04-22
+
+### Added
+- **Sandbox options**: `PZEMU.ConsoleRateMultiplier` (scales console spawn rates from 0.0x to 5.0x) and `PZEMU.CartridgeCountMultiplier` (scales per-console cartridge spawn counts from 0.0x to 5.0x). Accessible under the "PZEMU - Retro Consoles" page in PZ's Sandbox Options UI.
+- **Three bundled homebrew NES games** now spawn in loot: `Chase`, `LAN Master`, `Zooming Secretary`. Previously these ROMs shipped with the mod but were never referenced by the distribution pool.
+- Extended ROM fuzzy-matcher with Roman numerals V through X, diacritic stripping (Pokémon -> Pokemon, Señor -> Senor), leading-article drop (The/A/An) on both sides, em-dash / en-dash / colon separator normalization, and straight <-> curly apostrophe handling.
+
+### Fixed
+- **Windows path handling with spaces, apostrophes, and Unicode** (Error Code 1 / 0x0 resolution). Migrated to `PZFB.gameStartArgs()` (available in PZFB 1.7.0+), which passes arguments as an array instead of whitespace-splitting a single string. Users with Windows usernames containing spaces, OneDrive-redirected Documents folders, or non-ASCII characters in their paths should now be able to launch games without issue.
+- Orphaned bridge processes after unexpected PZ exit are now cleaned up automatically via PZFB 1.7.0's JVM shutdown hook (no PZEMU code change required; we just benefit from the new PZFB behavior).
+
+### Documented
+- Multiplayer is client-local: each player runs their own emulator instance, frames are not network-synced, and both PZFB and PZEMU must be installed on every client.
+
+### Required
+- **PZFB 1.7.0 or newer** for full functionality (the space-in-path fix and shutdown-hook cleanup). Users on older PZFB versions will still have the mod work but may hit the Windows path crash.
+
 ## [0.5.0] - 2026-04-12
 
 ### Added

@@ -11,12 +11,27 @@ require "Items/ProceduralDistributions"
 -- Console distribution — inject into existing loot tables
 -- ============================================================================
 
+-- Safe sandbox-var accessor: returns default when SandboxVars.PZEMU isn't populated yet
+-- (first run after install, saves from before this option existed, etc.)
+local function pzemuSandboxDouble(name, defaultValue)
+    if SandboxVars and SandboxVars.PZEMU and SandboxVars.PZEMU[name] ~= nil then
+        return SandboxVars.PZEMU[name]
+    end
+    return defaultValue
+end
+
 local function addToDistribution(tableName, itemName, weight)
     local data = ProceduralDistributions.list[tableName]
     if not data then return end
+    local mult = pzemuSandboxDouble("ConsoleRateMultiplier", 1.0)
+    local scaledWeight = weight * mult
+    -- Skip entirely if multiplier is 0 — avoids weight-0 entries in loot tables
+    if scaledWeight <= 0 then return end
     table.insert(data.items, itemName)
-    table.insert(data.items, weight)
+    table.insert(data.items, scaledWeight)
 end
+
+local function applyConsoleDistributions()
 
 -- NES — ubiquitous in 1993, nearly every household with kids
 addToDistribution("LivingRoomShelf",              "PZEMU.NES_Console", 8)
@@ -72,6 +87,12 @@ addToDistribution("ElectronicStoreMisc",           "PZEMU.SMS_Console", 3)
 addToDistribution("LivingRoomShelf",              "PZEMU.SMS_Console", 0.5)
 addToDistribution("LivingRoomShelfClassy",         "PZEMU.SMS_Console", 1)
 addToDistribution("LivingRoomShelfRedneck",        "PZEMU.SMS_Console", 0.5)
+
+end  -- applyConsoleDistributions
+
+-- Deferred until OnPreDistributionMerge so SandboxVars.PZEMU is populated before
+-- addToDistribution() reads the multiplier.
+Events.OnPreDistributionMerge.Add(applyConsoleDistributions)
 
 -- ============================================================================
 -- Game pools — weighted lists for cartridge spawning
@@ -139,6 +160,10 @@ local NES_GAME_POOL = {
     { name = "Kirby's Adventure",        romFile = "Kirbys_Adventure.nes",         namedItem = nil,                      weight = 12 },
     { name = "Lode Runner",              romFile = "Lode_Runner.nes",              namedItem = nil,                      weight = 5 },
     { name = "Maniac Mansion",           romFile = "Maniac_Mansion.nes",           namedItem = nil,                      weight = 5 },
+    -- Bundled homebrew (shipped with mod, always findable — hence reliable low weight)
+    { name = "Chase",                    romFile = "Chase.nes",                    namedItem = nil,                      weight = 3 },
+    { name = "LAN Master",               romFile = "Lan_Master.nes",               namedItem = nil,                      weight = 3 },
+    { name = "Zooming Secretary",        romFile = "Zooming_Secretary.nes",        namedItem = nil,                      weight = 3 },
 }
 
 local SNES_GAME_POOL = {
@@ -410,10 +435,12 @@ local function onFillContainer(_roomName, _containerType, container)
         local config = SYSTEM_CONFIG[sysTag]
         if config then
             local pool = config.pool
-            local count = 3 + ZombRand(5)  -- 3-7 base
+            local countMult = pzemuSandboxDouble("CartridgeCountMultiplier", 1.0)
+            local count = math.floor((3 + ZombRand(5)) * countMult + 0.5)  -- 3-7 base, scaled
             if ZombRand(100) < 15 then     -- 15% bonus
-                count = count + ZombRand(8)
+                count = count + math.floor(ZombRand(8) * countMult + 0.5)
             end
+            if count < 0 then count = 0 end
 
             -- Track spawned games to avoid duplicates
             local spawned = {}

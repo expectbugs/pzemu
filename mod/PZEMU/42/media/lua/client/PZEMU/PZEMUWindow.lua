@@ -17,37 +17,96 @@ local function getUserDir()
 end
 
 -- Helper: convert Roman numeral suffixes to Arabic for matching
--- Handles _IV, _III, _II at end of name or before another _
+-- Handles II-X at end of name or before another _
 local function romanToArabic(name)
-    -- Order matters: check longer numerals first
-    name = string.gsub(name, "_iv$", "_4")
-    name = string.gsub(name, "_iv_", "_4_")
-    name = string.gsub(name, "_iii$", "_3")
-    name = string.gsub(name, "_iii_", "_3_")
-    name = string.gsub(name, "_ii$", "_2")
-    name = string.gsub(name, "_ii_", "_2_")
+    -- Order matters: longer numerals first to prevent partial matches
+    -- (e.g. "viii" must run before "vii" before "vi")
+    -- "v" is processed last because any earlier numeral containing "v"
+    -- must be consumed before a single "v" could mis-match.
+    local romanPairs = {
+        {"viii", "8"}, {"vii", "7"}, {"vi", "6"}, {"iv", "4"},
+        {"iii", "3"}, {"ii", "2"}, {"ix", "9"}, {"x", "10"}, {"v", "5"},
+    }
+    for _, p in ipairs(romanPairs) do
+        name = string.gsub(name, "_" .. p[1] .. "$",  "_" .. p[2])
+        name = string.gsub(name, "_" .. p[1] .. "_",  "_" .. p[2] .. "_")
+    end
     return name
 end
 
+-- Strip common Latin-1 diacritics by byte-pattern. Kahlua lacks unicodedata,
+-- so this is a best-effort explicit mapping. Uses string.char so we don't
+-- depend on Kahlua supporting \xNN escapes in source literals.
+-- Covers accented vowels and ñ/ç common in game titles (Pokémon, Señor, etc.)
+local DIACRITIC_MAP = {
+    [string.char(0xc3,0xa1)]="a", [string.char(0xc3,0xa0)]="a", [string.char(0xc3,0xa2)]="a",
+    [string.char(0xc3,0xa3)]="a", [string.char(0xc3,0xa4)]="a", [string.char(0xc3,0xa5)]="a",
+    [string.char(0xc3,0xa9)]="e", [string.char(0xc3,0xa8)]="e", [string.char(0xc3,0xaa)]="e",
+    [string.char(0xc3,0xab)]="e", [string.char(0xc3,0xad)]="i", [string.char(0xc3,0xac)]="i",
+    [string.char(0xc3,0xae)]="i", [string.char(0xc3,0xaf)]="i", [string.char(0xc3,0xb3)]="o",
+    [string.char(0xc3,0xb2)]="o", [string.char(0xc3,0xb4)]="o", [string.char(0xc3,0xb5)]="o",
+    [string.char(0xc3,0xb6)]="o", [string.char(0xc3,0xba)]="u", [string.char(0xc3,0xb9)]="u",
+    [string.char(0xc3,0xbb)]="u", [string.char(0xc3,0xbc)]="u", [string.char(0xc3,0xb1)]="n",
+    [string.char(0xc3,0xa7)]="c",
+}
+local function stripDiacritics(s)
+    for bytes, repl in pairs(DIACRITIC_MAP) do
+        s = string.gsub(s, bytes, repl)
+    end
+    return s
+end
+
 -- Helper: normalize a ROM filename for fuzzy matching
--- Strips region codes (U), version tags (V1.0), dump flags [!], trailing _/.,
--- apostrophes, commas, internal periods. Converts Roman numerals to Arabic.
+-- Normalization examples (what this function produces for real inputs):
+--   "Super Mario Bros. 3 (USA) (PRG1) [!].nes" -> "super_mario_bros_3"
+--   "Legend of Zelda, The (USA).nes"           -> "legend_of_zelda"   (trailing ", The" drop)
+--   "The Legend of Zelda (USA).nes"            -> "legend_of_zelda"   (leading "The " drop)
+--   "Pokemon Red (U) [S][!].gb"                -> "pokemon_red"
+--   "Pokémon Red (U).gb"                       -> "pokemon_red"       (diacritic strip)
+--   "Kirby's Dream Land.gb"                    -> "kirbys_dream_land"
+--   "Zelda II: The Adventure of Link.nes"      -> "zelda_2_the_adventure_of_link"
+--   "Final Fantasy - IV.smc" (hyphen w/space)  -> "final_fantasy_4"
+--   "Castlevania IV.smc"                       -> "castlevania_4"
+-- Note: embedded articles are NOT dropped (only leading ^the_/^a_/^an_ and
+-- trailing _the$/_a$/_an$). This keeps game names like "Zelda II: The Adventure
+-- of Link" distinct from future entries without such sub-titles.
+-- False-positive guard:
+--   "Final Fantasy II" and "Final Fantasy III" produce distinct "final_fantasy_2"
+--   and "final_fantasy_3" — DO NOT add prefix-matching to fuzzyFindRom or this breaks.
 local function normalizeRomName(filename)
     -- Remove file extension
     local name = string.gsub(filename, "%.[^%.]+$", "")
-    -- Strip everything from first ( or [ to end of string
+    -- Strip everything from first ( or [ to end of string (region/version/dump tags)
     name = string.gsub(name, "%s*[%(].*$", "")
     name = string.gsub(name, "%s*%[.*$", "")
-    -- Strip trailing underscores and periods
+    -- Strip trailing underscores, whitespace, and periods
     name = string.gsub(name, "[_%s%.]+$", "")
-    -- Strip apostrophes and commas
-    name = string.gsub(name, "'", "")
-    name = string.gsub(name, ",", "")
+    -- Strip apostrophes (straight and U+2019 curly right single quotation mark) and commas
+    name = string.gsub(name, "'",                        "")
+    name = string.gsub(name, string.char(0xe2,0x80,0x99),"")
+    name = string.gsub(name, ",",                        "")
     -- Strip internal periods (like "Bros." -> "Bros")
     name = string.gsub(name, "%.", "")
+    -- Normalize separator variants: hyphens -> underscore, em/en-dash, colons
+    name = string.gsub(name, "%s*[%-]+%s*",              "_")
+    name = string.gsub(name, string.char(0xe2,0x80,0x93),"_")  -- en-dash
+    name = string.gsub(name, string.char(0xe2,0x80,0x94),"_")  -- em-dash
+    name = string.gsub(name, "%s*:%s*",                  "_")
+    -- Collapse runs of underscores/spaces
+    name = string.gsub(name, "[_%s]+", "_")
     -- Lowercase for case-insensitive matching
     name = string.lower(name)
-    -- Convert Roman numerals to Arabic (II->2, III->3, IV->4)
+    -- Strip common diacritics (after lowercase so only lowercase UTF-8 bytes matter)
+    name = stripDiacritics(name)
+    -- Drop leading article: "the_", "a_", "an_"
+    name = string.gsub(name, "^the_", "")
+    name = string.gsub(name, "^a_",   "")
+    name = string.gsub(name, "^an_",  "")
+    -- Drop trailing ", The" / ", A" / ", An" (now "_the" / "_a" / "_an" after comma-strip)
+    name = string.gsub(name, "_the$", "")
+    name = string.gsub(name, "_a$",   "")
+    name = string.gsub(name, "_an$",  "")
+    -- Convert Roman numerals to Arabic (II->2, III->3, ..., X->10)
     name = romanToArabic(name)
     return name
 end

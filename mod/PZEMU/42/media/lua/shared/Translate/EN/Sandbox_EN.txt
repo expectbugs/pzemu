@@ -1,0 +1,11 @@
+Sandbox_EN = {
+
+    Sandbox_PZEMU = "PZEMU - Retro Consoles",
+
+    Sandbox_PZEMU_ConsoleRateMultiplier = "Console Spawn Rate Multiplier",
+    Sandbox_PZEMU_ConsoleRateMultiplier_tooltip = "Scales how often consoles (NES, SNES, Genesis, Game Boy, Atari 2600, Game Gear, Master System) appear in loot. 0.0 disables console spawns entirely. 1.0 is default. 2.0 doubles spawn rates. Max 5.0.",
+
+    Sandbox_PZEMU_CartridgeCountMultiplier = "Cartridge Count Multiplier",
+    Sandbox_PZEMU_CartridgeCountMultiplier_tooltip = "Scales how many cartridges spawn alongside each found console. 0.0 means no cartridges ever spawn with consoles. 1.0 is default (3-7 per console, with a 15% chance of a larger stash). 2.0 doubles the counts. Max 5.0.",
+
+}

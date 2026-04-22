@@ -1,0 +1,21 @@
+VERSION = 1,
+
+option PZEMU.ConsoleRateMultiplier
+{
+    type = double,
+    min = 0.0,
+    default = 1.0,
+    max = 5.0,
+    page = PZEMU,
+    translation = PZEMU_ConsoleRateMultiplier,
+}
+
+option PZEMU.CartridgeCountMultiplier
+{
+    type = double,
+    min = 0.0,
+    default = 1.0,
+    max = 5.0,
+    page = PZEMU,
+    translation = PZEMU_CartridgeCountMultiplier,
+}
