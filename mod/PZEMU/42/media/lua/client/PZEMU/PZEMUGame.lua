@@ -520,8 +520,8 @@ function PZEMUGame:start(romPath)
 
     -- Build extra args as a table: { core_path, rom_path, width, height, sys_dir, save_dir }
     -- Using gameStartArgs (PZFB 1.7.0+) bypasses whitespace-split parsing, so paths
-    -- with spaces (e.g. Windows username "Adam Marzello"), apostrophes, or Unicode
-    -- pass through verbatim. Falls back to legacy gameStart on older PZFB.
+    -- with spaces, apostrophes, or Unicode pass through verbatim.
+    -- Falls back to legacy gameStart on older PZFB.
     local sep = getFileSeparator()
     local saveDir = getUserDir() .. sep .. "saves" .. sep .. self.console.romDir
 
