@@ -34,24 +34,27 @@ local function romanToArabic(name)
     return name
 end
 
--- Strip common Latin-1 diacritics by byte-pattern. Kahlua lacks unicodedata,
--- so this is a best-effort explicit mapping. Uses string.char so we don't
--- depend on Kahlua supporting \xNN escapes in source literals.
+-- Strip common Latin-1 diacritics. Kahlua strings are Java UTF-16 — each
+-- accented char (é, ñ, etc.) is a SINGLE 16-bit code unit, not a UTF-8 byte
+-- pair. Keys are the Latin-1 supplement code points (U+00E0..U+00FC, U+00F1,
+-- U+00E7). Kahlua's string.char(n) appends (char)n to a StringBuilder, so
+-- string.char(0xe9) yields the single UTF-16 char é (verified in
+-- se/krka/kahlua/stdlib/StringLib.class stringChar bytecode).
 -- Covers accented vowels and ñ/ç common in game titles (Pokémon, Señor, etc.)
 local DIACRITIC_MAP = {
-    [string.char(0xc3,0xa1)]="a", [string.char(0xc3,0xa0)]="a", [string.char(0xc3,0xa2)]="a",
-    [string.char(0xc3,0xa3)]="a", [string.char(0xc3,0xa4)]="a", [string.char(0xc3,0xa5)]="a",
-    [string.char(0xc3,0xa9)]="e", [string.char(0xc3,0xa8)]="e", [string.char(0xc3,0xaa)]="e",
-    [string.char(0xc3,0xab)]="e", [string.char(0xc3,0xad)]="i", [string.char(0xc3,0xac)]="i",
-    [string.char(0xc3,0xae)]="i", [string.char(0xc3,0xaf)]="i", [string.char(0xc3,0xb3)]="o",
-    [string.char(0xc3,0xb2)]="o", [string.char(0xc3,0xb4)]="o", [string.char(0xc3,0xb5)]="o",
-    [string.char(0xc3,0xb6)]="o", [string.char(0xc3,0xba)]="u", [string.char(0xc3,0xb9)]="u",
-    [string.char(0xc3,0xbb)]="u", [string.char(0xc3,0xbc)]="u", [string.char(0xc3,0xb1)]="n",
-    [string.char(0xc3,0xa7)]="c",
+    [string.char(0xe1)]="a", [string.char(0xe0)]="a", [string.char(0xe2)]="a",
+    [string.char(0xe3)]="a", [string.char(0xe4)]="a", [string.char(0xe5)]="a",
+    [string.char(0xe9)]="e", [string.char(0xe8)]="e", [string.char(0xea)]="e",
+    [string.char(0xeb)]="e", [string.char(0xed)]="i", [string.char(0xec)]="i",
+    [string.char(0xee)]="i", [string.char(0xef)]="i", [string.char(0xf3)]="o",
+    [string.char(0xf2)]="o", [string.char(0xf4)]="o", [string.char(0xf5)]="o",
+    [string.char(0xf6)]="o", [string.char(0xfa)]="u", [string.char(0xf9)]="u",
+    [string.char(0xfb)]="u", [string.char(0xfc)]="u", [string.char(0xf1)]="n",
+    [string.char(0xe7)]="c",
 }
 local function stripDiacritics(s)
-    for bytes, repl in pairs(DIACRITIC_MAP) do
-        s = string.gsub(s, bytes, repl)
+    for ch, repl in pairs(DIACRITIC_MAP) do
+        s = string.gsub(s, ch, repl)
     end
     return s
 end
@@ -82,21 +85,24 @@ local function normalizeRomName(filename)
     -- Strip trailing underscores, whitespace, and periods
     name = string.gsub(name, "[_%s%.]+$", "")
     -- Strip apostrophes (straight and U+2019 curly right single quotation mark) and commas
-    name = string.gsub(name, "'",                        "")
-    name = string.gsub(name, string.char(0xe2,0x80,0x99),"")
-    name = string.gsub(name, ",",                        "")
+    -- NOTE: single-char string.char values here are UTF-16 code units, not UTF-8 byte
+    -- sequences, matching Kahlua's Java-backed string representation.
+    name = string.gsub(name, "'",                "")
+    name = string.gsub(name, string.char(0x2019),"")
+    name = string.gsub(name, ",",                "")
     -- Strip internal periods (like "Bros." -> "Bros")
     name = string.gsub(name, "%.", "")
     -- Normalize separator variants: hyphens -> underscore, em/en-dash, colons
-    name = string.gsub(name, "%s*[%-]+%s*",              "_")
-    name = string.gsub(name, string.char(0xe2,0x80,0x93),"_")  -- en-dash
-    name = string.gsub(name, string.char(0xe2,0x80,0x94),"_")  -- em-dash
-    name = string.gsub(name, "%s*:%s*",                  "_")
+    name = string.gsub(name, "%s*[%-]+%s*",      "_")
+    name = string.gsub(name, string.char(0x2013),"_")  -- en-dash U+2013
+    name = string.gsub(name, string.char(0x2014),"_")  -- em-dash U+2014
+    name = string.gsub(name, "%s*:%s*",          "_")
     -- Collapse runs of underscores/spaces
     name = string.gsub(name, "[_%s]+", "_")
     -- Lowercase for case-insensitive matching
     name = string.lower(name)
-    -- Strip common diacritics (after lowercase so only lowercase UTF-8 bytes matter)
+    -- Strip common diacritics (after lowercase so only the lowercase Latin-1
+    -- supplement code points need to be mapped — U+00E0..U+00FC + U+00F1/U+00E7)
     name = stripDiacritics(name)
     -- Drop leading article: "the_", "a_", "an_"
     name = string.gsub(name, "^the_", "")

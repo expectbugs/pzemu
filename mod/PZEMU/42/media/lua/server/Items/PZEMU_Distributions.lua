@@ -31,7 +31,14 @@ local function addToDistribution(tableName, itemName, weight)
     table.insert(data.items, scaledWeight)
 end
 
+local consoleDistributionsApplied = false
+
 local function applyConsoleDistributions()
+    -- Guard against double-registration: if the mod is on a player-hosted MP
+    -- instance, both OnGameStart (client-side IngameState) and OnServerStarted
+    -- (host's GameServer) will fire. We only want to add items once.
+    if consoleDistributionsApplied then return end
+    consoleDistributionsApplied = true
 
 -- NES — ubiquitous in 1993, nearly every household with kids
 addToDistribution("LivingRoomShelf",              "PZEMU.NES_Console", 8)
@@ -88,11 +95,24 @@ addToDistribution("LivingRoomShelf",              "PZEMU.SMS_Console", 0.5)
 addToDistribution("LivingRoomShelfClassy",         "PZEMU.SMS_Console", 1)
 addToDistribution("LivingRoomShelfRedneck",        "PZEMU.SMS_Console", 0.5)
 
+    -- After modifying ProceduralDistributions.list, re-parse so the Java-side
+    -- loot tables pick up the new entries. Pattern verified against
+    -- VFE/VFE_Distributions.lua:1635 which uses the same Parse() call.
+    -- Required because we run AFTER the initial IsoWorld.init() ItemPickerJava.Parse()
+    -- at IsoWorld:2117 bytecode. Running earlier (OnPreDistributionMerge at
+    -- IsoWorld:2024) would not have SandboxVars populated — SandboxOptions.load()
+    -- -> toLua() runs at IsoWorld:2096, AFTER OnPreDistributionMerge. For loaded
+    -- saves this means the user's per-save sandbox value isn't visible in time.
+    ItemPickerJava.Parse()
 end  -- applyConsoleDistributions
 
--- Deferred until OnPreDistributionMerge so SandboxVars.PZEMU is populated before
--- addToDistribution() reads the multiplier.
-Events.OnPreDistributionMerge.Add(applyConsoleDistributions)
+-- Register on BOTH events so loot distribution works in every mode:
+--   Single-player: IngameState fires OnGameStart (GameServer doesn't run).
+--   Dedicated server: GameServer fires OnServerStarted (no IngameState).
+--   Player-hosted MP: both fire; the applied-guard prevents double-add.
+-- Verified OnServerStarted trigger at zombie/network/GameServer.class bytecode 230.
+Events.OnGameStart.Add(applyConsoleDistributions)
+Events.OnServerStarted.Add(applyConsoleDistributions)
 
 -- ============================================================================
 -- Game pools — weighted lists for cartridge spawning
