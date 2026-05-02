@@ -385,34 +385,45 @@ local function deployBinaries()
         }
     end
 
+    -- Redeploy when destination is missing OR size differs from the source .dat.
+    -- The size mismatch covers mod updates: when a new bridge or core ships, its .dat
+    -- file size differs from the previously-deployed binary, triggering replacement.
+    -- (Previous behavior: skip if destination exists — caused users to keep stale
+    -- binaries across updates.)
     for _, f in ipairs(files) do
         local destPath = destDir .. sep .. f.dest
-        if PZFB.fileSize(destPath) <= 0 then
-            local src = findModDat(f.dat)
-            if src then
-                print("[PZEMU] Deploying " .. f.dat .. " -> " .. destPath)
+        local src = findModDat(f.dat)
+        if src then
+            local destSize = PZFB.fileSize(destPath)
+            local srcSize  = PZFB.fileSize(src)
+            if destSize <= 0 or destSize ~= srcSize then
+                print("[PZEMU] Deploying " .. f.dat .. " -> " .. destPath
+                      .. " (was " .. tostring(destSize) .. ", now " .. tostring(srcSize) .. ")")
                 PZFB.copyFile(src, destPath)
             end
         end
     end
 
-    -- Deploy all cores (skip duplicates — genesis_plus_gx is shared)
-    -- Windows uses _win.dat files containing .dll cores
+    -- Deploy all cores (skip duplicates — genesis_plus_gx is shared).
+    -- Same size-mismatch redeploy semantics as bridges above.
+    -- Windows uses _win.dat files containing .dll cores.
     local deployed = {}
     for _, console in ipairs(CONSOLES) do
         if not deployed[console.coreFile] then
             deployed[console.coreFile] = true
             local ext = isWindows() and ".dll" or ".so"
             local coreDest = destDir .. sep .. console.coreFile .. ext
-            if PZFB.fileSize(coreDest) <= 0 then
-                local datName
-                if isWindows() then
-                    datName = string.gsub(console.coreDat, "%.dat$", "_win.dat")
-                else
-                    datName = console.coreDat
-                end
-                local src = findModDat(datName)
-                if src then
+            local datName
+            if isWindows() then
+                datName = string.gsub(console.coreDat, "%.dat$", "_win.dat")
+            else
+                datName = console.coreDat
+            end
+            local src = findModDat(datName)
+            if src then
+                local destSize = PZFB.fileSize(coreDest)
+                local srcSize  = PZFB.fileSize(src)
+                if destSize <= 0 or destSize ~= srcSize then
                     print("[PZEMU] Deploying " .. datName .. " -> " .. coreDest)
                     PZFB.copyFile(src, coreDest)
                 end
@@ -493,6 +504,18 @@ function PZEMUGame:sendGamepadButton(joypadBtn, pressed)
     end
 end
 
+-- Forward an analog stick value to the bridge.
+-- axisId: 0=leftX, 1=leftY, 2=rightX, 3=rightY.
+-- value: float in [-1.0, 1.0]. Quantized to 8 bits (128 = center) and packed into the
+-- existing 2-byte protocol with keycode = 64 + axisId.
+function PZEMUGame:sendGamepadAxis(axisId, value)
+    if self.state ~= "RUNNING" and self.state ~= "STARTING" then return end
+    if value < -1.0 then value = -1.0 elseif value > 1.0 then value = 1.0 end
+    local q = math.floor((value + 1.0) * 127.5 + 0.5)
+    if q < 0 then q = 0 elseif q > 255 then q = 255 end
+    PZFB.gameSendInput(64 + axisId, q)
+end
+
 -- ---------- lifecycle ----------
 
 function PZEMUGame:start(romPath)
@@ -533,6 +556,12 @@ function PZEMUGame:start(romPath)
         saveDir,
         saveDir,
     }
+
+    -- Optional 7th argv: libretro controller-port-device subclass for analog-capable cores.
+    -- Bridge defaults to RETRO_DEVICE_JOYPAD (1) when absent — existing consoles unchanged.
+    if self.console.portDevice then
+        table.insert(argv, tostring(self.console.portDevice))
+    end
 
     if PZFB.gameStartArgs then
         PZFB.gameStartArgs(self.binaryPath, w, h, argv)

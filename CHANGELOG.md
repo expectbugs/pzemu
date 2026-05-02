@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.7.0] - 2026-05-02
+
+### Added
+- **Analog stick framework**: new wire-protocol extension (keycodes 64-67) carries left/right analog stick X/Y values to the bridge, decoded into libretro's `RETRO_DEVICE_ANALOG` polls. Console entries opt in via `analog = true` and `portDevice = <N>` (libretro device subclass — e.g., 517 for Beetle PSX DualShock, 261 for Swanstation). Default consoles (NES, SNES, Genesis, GB, Atari 2600, Game Gear, SMS) keep their existing left-stick→D-pad threshold behavior unchanged.
+- **`PZEMUGame:sendGamepadAxis(axisId, value)`** — public Lua method for forwarding axis values; quantizes float `[-1.0, 1.0]` to 8 bits and packs into the existing 2-byte protocol.
+- **Bridge accepts optional 7th argv `port_device`** passed to `retro_set_controller_port_device(port=0, …)`. Defaults to `RETRO_DEVICE_JOYPAD (1)` when absent.
+- **Committed Windows cross-compile recipe** (`make windows` in `bridge/`) — uses sibling pzdoom MinGW SDL2 dev files. Replaces the previous undocumented ad-hoc Windows build.
+
+### Fixed
+- **Bridge / core auto-redeploy on mod update**: `deployBinaries()` now redeploys when source `.dat` size differs from deployed binary instead of skipping if destination merely exists. Existing users will pick up the v0.7.0 bridge automatically on next launch.
+
+### For mod customizers (advanced)
+- Drop a libretro core in `~/Zomboid/PZEMU/`, add a console entry with `analog = true` and the right `portDevice` to your local copy of `CONSOLES`, and analog forwarding works. PSX requires region BIOS files in the per-console save dir; PPSSPP ignores `portDevice` (its `retro_set_controller_port_device` is a no-op stub — leave it unset). See `analog.md` in the source repo for the full how-to and per-core constants.
+
 ## [0.6.0] - 2026-04-22
 
 ### Added

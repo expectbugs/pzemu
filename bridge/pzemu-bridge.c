@@ -4,7 +4,7 @@
  * Loads any libretro core via dlopen, pipes RGBA frames to stdout,
  * reads button events from stdin, handles audio via SDL2.
  *
- * Usage: pzemu-bridge <core_path> <rom_path> <width> <height> [system_dir] [save_dir]
+ * Usage: pzemu-bridge <core_path> <rom_path> <width> <height> [system_dir] [save_dir] [port_device]
  *
  * Protocol:
  *   stdout → raw RGBA frames (width * height * 4 bytes each), continuous
@@ -79,6 +79,9 @@ static enum retro_pixel_format g_pixel_format = RETRO_PIXEL_FORMAT_0RGB1555;
 /* button state array indexed by RETRO_DEVICE_ID_JOYPAD_* (0–15) */
 static int16_t g_buttons[16] = {0};
 
+/* analog stick state — 4 axes (leftX, leftY, rightX, rightY) in libretro int16 range */
+static int16_t g_analog[4] = {0};
+
 /* frame dimensions (set from CLI, may be updated by SET_GEOMETRY) */
 static unsigned g_frame_width  = 0;
 static unsigned g_frame_height = 0;
@@ -93,6 +96,10 @@ static SDL_AudioDeviceID g_audio_dev = 0;
 /* directories */
 static const char *g_system_dir = ".";
 static const char *g_save_dir   = ".";
+
+/* libretro controller type for port 0 — set from CLI arg 7, default = digital JOYPAD.
+ * Different cores expect different values. PSX/PSP/N64 use core-specific subclass IDs. */
+static unsigned g_port_device = RETRO_DEVICE_JOYPAD;
 
 /* shutdown flag — set by RETRO_ENVIRONMENT_SHUTDOWN */
 static bool g_shutdown = false;
@@ -129,6 +136,13 @@ static bool     (*p_retro_unserialize)(const void *, size_t);
 #define META_SAVE_STATE  16
 #define META_LOAD_STATE  17
 #define META_PAUSE       18
+
+/* analog axis events (wire keycodes 64..67, value packed in `pressed` byte) */
+#define AXIS_BASE      64
+#define AXIS_LEFT_X     0
+#define AXIS_LEFT_Y     1
+#define AXIS_RIGHT_X    2
+#define AXIS_RIGHT_Y    3
 
 static bool g_paused = false;
 
@@ -330,8 +344,19 @@ static void RETRO_CALLCONV video_refresh_cb(const void *data,
 static void handle_key_event(uint8_t pressed, uint8_t keycode) {
     if (keycode < 16) {
         g_buttons[keycode] = pressed ? 1 : 0;
-    } else if (pressed) {
-        /* meta-commands — trigger on press only */
+        return;
+    }
+
+    /* analog axis update: keycode 64..67, value packed in `pressed` (128 = center) */
+    if (keycode >= AXIS_BASE && keycode <= AXIS_BASE + 3) {
+        unsigned axis = keycode - AXIS_BASE;
+        int s = (int)pressed - 128;          /* -128..+127 */
+        g_analog[axis] = (int16_t)(s * 256); /* -32768..+32512 */
+        return;
+    }
+
+    /* meta-commands — trigger on press only */
+    if (pressed) {
         switch (keycode) {
         case META_SAVE_STATE: do_save_state(); break;
         case META_LOAD_STATE: do_load_state(); break;
@@ -400,18 +425,37 @@ static void RETRO_CALLCONV input_poll_cb(void) {
 static int16_t RETRO_CALLCONV input_state_cb(unsigned port, unsigned device,
                                               unsigned index, unsigned id)
 {
-    if (port != 0 || (device & 0xFF) != RETRO_DEVICE_JOYPAD || index != 0)
-        return 0;
+    if (port != 0) return 0;
 
-    if (id == RETRO_DEVICE_ID_JOYPAD_MASK) {
-        int16_t mask = 0;
-        for (int i = 0; i < 16; i++)
-            if (g_buttons[i]) mask |= (1 << i);
-        return mask;
+    unsigned dev = device & RETRO_DEVICE_MASK;
+
+    /* digital joypad polls — used by both RETRO_DEVICE_JOYPAD and RETRO_DEVICE_ANALOG cores */
+    if (dev == RETRO_DEVICE_JOYPAD && index == 0) {
+        if (id == RETRO_DEVICE_ID_JOYPAD_MASK) {
+            int16_t mask = 0;
+            for (int i = 0; i < 16; i++)
+                if (g_buttons[i]) mask |= (1 << i);
+            return mask;
+        }
+        if (id < 16) return g_buttons[id];
+        return 0;
     }
 
-    if (id < 16)
-        return g_buttons[id];
+    /* analog axis polls */
+    if (dev == RETRO_DEVICE_ANALOG) {
+        if (index == RETRO_DEVICE_INDEX_ANALOG_LEFT) {
+            if (id == RETRO_DEVICE_ID_ANALOG_X) return g_analog[AXIS_LEFT_X];
+            if (id == RETRO_DEVICE_ID_ANALOG_Y) return g_analog[AXIS_LEFT_Y];
+        } else if (index == RETRO_DEVICE_INDEX_ANALOG_RIGHT) {
+            if (id == RETRO_DEVICE_ID_ANALOG_X) return g_analog[AXIS_RIGHT_X];
+            if (id == RETRO_DEVICE_ID_ANALOG_Y) return g_analog[AXIS_RIGHT_Y];
+        } else if (index == RETRO_DEVICE_INDEX_ANALOG_BUTTON) {
+            /* analog-button pressure poll (e.g. shoulder triggers as analog) —
+             * we have no analog source for these, so report digital state scaled */
+            if (id < 16 && g_buttons[id]) return 0x7FFF;
+            return 0;
+        }
+    }
 
     return 0;
 }
@@ -601,7 +645,7 @@ static void signal_handler(int sig) {
 
 int main(int argc, char *argv[]) {
     if (argc < 5) {
-        fprintf(stderr, "Usage: pzemu-bridge <core> <rom> <width> <height> [sys_dir] [save_dir]\n");
+        fprintf(stderr, "Usage: pzemu-bridge <core> <rom> <width> <height> [sys_dir] [save_dir] [port_device]\n");
         return 1;
     }
 
@@ -611,6 +655,7 @@ int main(int argc, char *argv[]) {
     g_frame_height = (unsigned)atoi(argv[4]);
     if (argc > 5) g_system_dir = argv[5];
     if (argc > 6) g_save_dir   = argv[6];
+    if (argc > 7) g_port_device = (unsigned)atoi(argv[7]);
 
     if (g_frame_width == 0 || g_frame_height == 0)
         die("Invalid frame dimensions: %ux%u", g_frame_width, g_frame_height);
@@ -743,7 +788,8 @@ int main(int argc, char *argv[]) {
             av_info.timing.fps, av_info.timing.sample_rate);
 
     /* --- STEP 10: Set controller --- */
-    p_retro_set_controller_port_device(0, RETRO_DEVICE_JOYPAD);
+    p_retro_set_controller_port_device(0, g_port_device);
+    fprintf(stderr, "[pzemu] Controller port device: %u\n", g_port_device);
 
     /* --- STEP 11: Load SRAM + register signal handlers --- */
     build_srm_path(rom_path, g_save_dir);

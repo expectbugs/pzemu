@@ -247,14 +247,25 @@ function PZEMUGamePanel:onPZFBGamepadUp(slot, button)
     end
 end
 
--- Analog stick -> D-pad conversion for consoles without analog support
+-- Analog forwarding for analog-capable consoles (console.analog == true);
+-- D-pad emulation fallback for digital-only consoles (existing behavior preserved).
 local STICK_DEADZONE = 0.5
+local AXIS_NAME_TO_ID = { leftX = 0, leftY = 1, rightX = 2, rightY = 3 }
 local stickState = { left = 0, right = 0, up = 0, down = 0 }
 
 function PZEMUGamePanel:onPZFBGamepadAxis(slot, name, value)
     if not self.game then return end
 
-    -- Only use left stick for D-pad
+    -- Console supports analog (e.g. PSX/PSP/N64 added by user): forward the raw axis value
+    if self.game.console and self.game.console.analog then
+        local axisId = AXIS_NAME_TO_ID[name]
+        if axisId then
+            self.game:sendGamepadAxis(axisId, value)
+        end
+        return
+    end
+
+    -- Digital-only consoles: emulate D-pad from left stick (existing behavior, untouched)
     if name == "leftX" then
         local wasLeft = stickState.left
         local wasRight = stickState.right
