@@ -6,6 +6,15 @@ Sandbox_EN = {
     Sandbox_PZEMU_ConsoleRateMultiplier_tooltip = "Scales how often consoles (NES, SNES, Genesis, Game Boy, Atari 2600, Game Gear, Master System) appear in loot. 0.0 disables console spawns entirely. 1.0 is default. 2.0 doubles spawn rates. Max 5.0.",
 
     Sandbox_PZEMU_CartridgeCountMultiplier = "Cartridge Count Multiplier",
-    Sandbox_PZEMU_CartridgeCountMultiplier_tooltip = "Scales how many cartridges spawn alongside each found console. 0.0 means no cartridges ever spawn with consoles. 1.0 is default (3-7 per console, with a 15% chance of a larger stash). 2.0 doubles the counts. Max 5.0.",
+    Sandbox_PZEMU_CartridgeCountMultiplier_tooltip = "Scales how many cartridges spawn alongside each found console. 0.0 means no cartridges ever spawn with consoles (not even the system's must-have game). 1.0 is default (3-7 per console, with a 15% chance of a larger stash). 2.0 doubles the counts. Max 5.0.",
+
+    Sandbox_PZEMU_DefaultVolume = "Default Emulator Volume (%)",
+    Sandbox_PZEMU_DefaultVolume_tooltip = "Starting volume of the emulator audio for players who have not changed it yet. Players adjust it in the emulator window (- / = keys, M to mute); their choice is remembered on their own machine and overrides this.",
+
+    Sandbox_PZEMU_HandheldBatteryMinutes = "Handheld Battery Life (real minutes)",
+    Sandbox_PZEMU_HandheldBatteryMinutes_tooltip = "How many real-time minutes of play a full set of batteries lasts in a Game Boy or Game Gear. Default 600 (10 real hours), max 1440 (24 hours). The handheld freezes when the batteries are dead; insert a new Battery (right-click the handheld) to continue. 0 disables battery drain entirely.",
+
+    Sandbox_PZEMU_CartridgeBlowing = "Cartridges Sometimes Need A Blow",
+    Sandbox_PZEMU_CartridgeBlowing_tooltip = "Flavour: occasionally a game refuses to boot until you blow on the cartridge. Blowing on it is oddly comforting (tiny unhappiness relief). Off by default.",
 
 }

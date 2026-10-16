@@ -352,7 +352,7 @@ local GG_GAME_POOL = {
     { name = "Columns",                  romFile = "Columns.gg",                   namedItem = "PZEMU.GG_Cart_Columns", weight = 30 },
     { name = "Sonic the Hedgehog 2",     romFile = "Sonic_the_Hedgehog_2.gg",      namedItem = nil,                     weight = 25 },
     { name = "Sonic Chaos",              romFile = "Sonic_Chaos.gg",               namedItem = nil,                     weight = 15 },
-    { name = "The G.G. Shinobi",         romFile = "Shinobi.gg",                   namedItem = "PZEMU.GG_Cart_Shinobi", weight = 10 },
+    { name = "The G.G. Shinobi",         romFile = "GG_Shinobi.gg",                namedItem = "PZEMU.GG_Cart_Shinobi", weight = 10 },
     { name = "Streets of Rage 2",        romFile = "Streets_of_Rage_2.gg",         namedItem = nil,                     weight = 10 },
     { name = "Mortal Kombat",            romFile = "Mortal_Kombat.gg",             namedItem = nil,                     weight = 10 },
     { name = "Klax",                     romFile = "Klax.gg",                      namedItem = "PZEMU.GG_Cart_Klax",    weight = 8 },
@@ -367,15 +367,18 @@ local SMS_GAME_POOL = {
     { name = "Wonder Boy",                 romFile = "Wonder_Boy.sms",                 namedItem = nil, weight = 15 },
 }
 
--- Map console system tags to their game pool and generic cartridge item
+-- Map console system tags to their game pool and generic cartridge item.
+-- `prefix` is the system label put in front of generic cartridge names
+-- ("NES: Super Mario Bros. 3") — must match SYSTEM_PREFIX in PZEMUMain.lua and
+-- the named-cartridge DisplayNames in pzemu_items.txt.
 local SYSTEM_CONFIG = {
-    PZEMU_NES       = { pool = NES_GAME_POOL,       genericItem = "PZEMU.NES_Cart_Generic",     mustHaveIndex = 1 },
-    PZEMU_SNES      = { pool = SNES_GAME_POOL,      genericItem = "PZEMU.SNES_Cart_Generic",    mustHaveIndex = 1 },
-    PZEMU_Genesis   = { pool = GENESIS_GAME_POOL,    genericItem = "PZEMU.Genesis_Cart_Generic", mustHaveIndex = 1 },
-    PZEMU_GB        = { pool = GB_GAME_POOL,         genericItem = "PZEMU.GB_Cart_Generic",      mustHaveIndex = 1 },
-    PZEMU_Atari2600 = { pool = ATARI2600_GAME_POOL,  genericItem = "PZEMU.Atari_Cart_Generic",   mustHaveIndex = 1 },
-    PZEMU_GG        = { pool = GG_GAME_POOL,         genericItem = "PZEMU.GG_Cart_Generic",      mustHaveIndex = 1 },
-    PZEMU_SMS       = { pool = SMS_GAME_POOL,         genericItem = "PZEMU.SMS_Cart_Generic",     mustHaveIndex = 1 },
+    PZEMU_NES       = { pool = NES_GAME_POOL,       genericItem = "PZEMU.NES_Cart_Generic",     mustHaveIndex = 1, prefix = "NES" },
+    PZEMU_SNES      = { pool = SNES_GAME_POOL,      genericItem = "PZEMU.SNES_Cart_Generic",    mustHaveIndex = 1, prefix = "SNES" },
+    PZEMU_Genesis   = { pool = GENESIS_GAME_POOL,    genericItem = "PZEMU.Genesis_Cart_Generic", mustHaveIndex = 1, prefix = "Genesis" },
+    PZEMU_GB        = { pool = GB_GAME_POOL,         genericItem = "PZEMU.GB_Cart_Generic",      mustHaveIndex = 1, prefix = "Game Boy" },
+    PZEMU_Atari2600 = { pool = ATARI2600_GAME_POOL,  genericItem = "PZEMU.Atari_Cart_Generic",   mustHaveIndex = 1, prefix = "Atari 2600" },
+    PZEMU_GG        = { pool = GG_GAME_POOL,         genericItem = "PZEMU.GG_Cart_Generic",      mustHaveIndex = 1, prefix = "Game Gear" },
+    PZEMU_SMS       = { pool = SMS_GAME_POOL,         genericItem = "PZEMU.SMS_Cart_Generic",     mustHaveIndex = 1, prefix = "Master System" },
 }
 
 -- Console fullType → system key (for type-based identification, no hasTag)
@@ -422,13 +425,36 @@ local function spawnCartridge(container, game, config)
     end
     if item then
         if not game.namedItem then
-            item:setName(game.name)
+            -- "NES: Super Mario Bros. 3" — the bare game name stays in modData
+            -- (that is what the game picker and ROM lookup use).
+            local shown = game.name
+            if config.prefix then shown = config.prefix .. ": " .. game.name end
+            item:setName(shown)
             item:setCustomName(true)
             item:getModData().PZEMU_GameName = game.name
             item:getModData().PZEMU_RomFile = game.romFile
         end
     end
     return item
+end
+
+-- ============================================================================
+-- Cartridge count for one console in a container (pure; unit-tested)
+--   mult <= 0   -> 0 (no cartridges at all, not even the must-have game)
+--   otherwise   -> round((3 + ZombRand(5)) * mult), +round(ZombRand(8) * mult) on a
+--                  15% bonus roll, never below 1 so the must-have game still spawns
+--                  for tiny positive multipliers.
+-- rollFn(n) must behave like ZombRand(n): integer in [0, n).
+-- ============================================================================
+
+function PZEMU_cartridgeCount(mult, rollFn)
+    if type(mult) ~= "number" or mult <= 0 then return 0 end
+    local count = math.floor((3 + rollFn(5)) * mult + 0.5)
+    if rollFn(100) < 15 then
+        count = count + math.floor(rollFn(8) * mult + 0.5)
+    end
+    if count < 1 then count = 1 end
+    return count
 end
 
 -- ============================================================================
@@ -450,24 +476,23 @@ local function onFillContainer(_roomName, _containerType, container)
         end
     end
 
+    -- CartridgeCountMultiplier = 0 means NO cartridges, including the must-have game.
+    local countMult = pzemuSandboxDouble("CartridgeCountMultiplier", 1.0)
+    if type(countMult) ~= "number" or countMult <= 0 then return end
+
     -- For each console system found, spawn cartridges
     for sysTag, _ in pairs(foundSystems) do
         local config = SYSTEM_CONFIG[sysTag]
         if config then
             local pool = config.pool
-            local countMult = pzemuSandboxDouble("CartridgeCountMultiplier", 1.0)
-            local count = math.floor((3 + ZombRand(5)) * countMult + 0.5)  -- 3-7 base, scaled
-            if ZombRand(100) < 15 then     -- 15% bonus
-                count = count + math.floor(ZombRand(8) * countMult + 0.5)
-            end
-            if count < 0 then count = 0 end
+            local count = PZEMU_cartridgeCount(countMult, ZombRand)  -- 3-7 base, scaled, >= 1
 
             -- Track spawned games to avoid duplicates
             local spawned = {}
 
             -- Always include the "must-have" game first
             local mustHave = pool[config.mustHaveIndex]
-            if mustHave then
+            if mustHave and count > 0 then
                 spawnCartridge(container, mustHave, config)
                 spawned[mustHave.romFile] = true
                 count = count - 1

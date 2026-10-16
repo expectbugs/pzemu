@@ -6,8 +6,15 @@
 --   2. Right-click console item: shows "Play <Console>" if TV nearby (or handheld)
 --   3. Right-click cartridge item: shows "Play <Game>" — launches directly
 --
--- Item identification uses getFullType() lookups (verified B42 pattern).
+-- When an option cannot be used it is still shown, greyed out, with a tooltip
+-- that says why (no powered TV, no cartridges nearby, dead batteries, PZFB not
+-- installed, ...). Item identification uses getFullType() lookups.
+-- TV detection uses instanceof(obj, "IsoTelevision") — IsoWaveSignal would also
+-- match map radios (both extend IsoWaveSignal in B42).
 -- Power check uses haveElectricity() || hasGridPower() (verified from vanilla).
+--
+-- FYI: the separate mod "Literally Playable Video Game Consoles" ships its own
+-- replacement of this file. It is not supported (Adam, 2026-10-15).
 --
 
 require "PZEMU/PZEMUWindow"
@@ -32,6 +39,13 @@ local CONSOLE_TYPE_TO_ID = {
 local HANDHELD_TYPES = {
     ["PZEMU.GameBoy_Console"]   = true,
     ["PZEMU.GameGear_Console"]  = true,
+}
+
+-- Item-name prefix per system ("NES: Super Mario Bros."). Must match the
+-- DisplayNames in pzemu_items.txt and the spawn code in PZEMU_Distributions.lua.
+local SYSTEM_PREFIX = {
+    nes = "NES", snes = "SNES", genesis = "Genesis", gb = "Game Boy",
+    atari2600 = "Atari 2600", gg = "Game Gear", sms = "Master System",
 }
 
 local CART_TYPE_TO_SYSTEM = {
@@ -126,7 +140,7 @@ local NAMED_CART_ROMS = {
     ["PZEMU.Genesis_Cart_OutRun"]          = "OutRun.smd",
     ["PZEMU.Genesis_Cart_PhantasyStar3"]   = "Phantasy_Star_3.smd",
     ["PZEMU.Genesis_Cart_QuackShot"]       = "QuackShot.smd",
-    ["PZEMU.Genesis_Cart_RoadRash2"]       = "Road_Rash_2.smd",
+    ["PZEMU.Genesis_Cart_RoadRash2"]       = "Road_Rash_II.smd",
     ["PZEMU.Genesis_Cart_RollingThunder2"] = "Rolling_Thunder_2.smd",
     ["PZEMU.Genesis_Cart_ShadowDancer"]    = "Shadow_Dancer.smd",
     ["PZEMU.Genesis_Cart_RevengeOfShinobi"] = "Revenge_of_Shinobi.smd",
@@ -170,10 +184,36 @@ end
 -- Item identification helpers
 -- ============================================================================
 
+local function stripSystemPrefix(name, systemId)
+    local prefix = SYSTEM_PREFIX[systemId]
+    if prefix and name then
+        local p = prefix .. ": "
+        if string.sub(name, 1, string.len(p)) == p then
+            return string.sub(name, string.len(p) + 1)
+        end
+    end
+    return name
+end
+
+--- Generic cartridges spawned before 0.8.0 carry the bare game name. Give them
+--- the same "System: Game" display name new spawns get (client-side; harmless).
+local function fixLegacyCartName(item, systemId)
+    local ok = pcall(function()
+        local md = item:getModData()
+        local gameName = md and md.PZEMU_GameName
+        local prefix = SYSTEM_PREFIX[systemId]
+        if gameName and prefix and item:isCustomName() and item:getName() == gameName then
+            item:setName(prefix .. ": " .. gameName)
+        end
+    end)
+    return ok
+end
+
 local function getCartridgeData(item)
     local fullType = item:getFullType()
+    local systemId = CART_TYPE_TO_SYSTEM[fullType]
     local romFile = NAMED_CART_ROMS[fullType]
-    local gameName = item:getName()
+    local gameName = stripSystemPrefix(item:getName(), systemId)
 
     if not romFile then
         local md = item:getModData()
@@ -183,7 +223,12 @@ local function getCartridgeData(item)
         end
     end
 
-    return { gameName = gameName, romFile = romFile }
+    return { gameName = gameName, romFile = romFile, systemId = systemId }
+end
+
+local function handheldHasCharge(item)
+    local ok, uses = pcall(function() return item:getCurrentUsesFloat() end)
+    return ok and type(uses) == "number" and uses > 0
 end
 
 -- ============================================================================
@@ -253,17 +298,30 @@ function PZEMUMain.scanNearbyConsoles(playerObj, range)
 end
 
 function PZEMUMain.scanNearbyCartridges(playerObj, range, systemId)
-    return scanItems(playerObj, range, function(item)
+    local carts = scanItems(playerObj, range, function(item)
         return CART_TYPE_TO_SYSTEM[item:getFullType()] == systemId
     end)
+    for _, item in ipairs(carts) do
+        fixLegacyCartName(item, systemId)
+    end
+    return carts
 end
 
-function PZEMUMain.findNearbyTV(playerObj, range)
+--- Is this world object a television (not a radio)? IsoTelevision extends
+--- IsoWaveSignal; so does IsoRadio — hence the explicit class check.
+local function isTelevision(obj)
+    return instanceof(obj, "IsoTelevision") and obj:getSprite() ~= nil
+end
+
+--- Nearest TV on the player's floor within range.
+--- Returns tvObject|nil, powered(boolean). Prefers a powered TV.
+function PZEMUMain.findNearbyTVStatus(playerObj, range)
     local sq = playerObj:getSquare()
-    if not sq then return nil end
+    if not sq then return nil, false end
     local cell = sq:getCell()
     local cx, cy, cz = sq:getX(), sq:getY(), sq:getZ()
 
+    local unpowered = nil
     for dx = -range, range do
         for dy = -range, range do
             local s = cell:getGridSquare(cx + dx, cy + dy, cz)
@@ -271,16 +329,24 @@ function PZEMUMain.findNearbyTV(playerObj, range)
                 local objects = s:getObjects()
                 for i = 0, objects:size() - 1 do
                     local obj = objects:get(i)
-                    if instanceof(obj, "IsoWaveSignal") and obj:getSprite()
-                       and not obj:getModData().RadioItemID then
+                    if isTelevision(obj) then
                         if hasPower(s) then
-                            return obj
+                            return obj, true
+                        elseif not unpowered then
+                            unpowered = obj
                         end
                     end
                 end
             end
         end
     end
+    return unpowered, false
+end
+
+--- Backward-compatible: powered TV within range or nil.
+function PZEMUMain.findNearbyTV(playerObj, range)
+    local tv, powered = PZEMUMain.findNearbyTVStatus(playerObj, range)
+    if tv and powered then return tv end
     return nil
 end
 
@@ -302,19 +368,66 @@ local function buildCartridgeList(cartridges)
 end
 
 -- ============================================================================
+-- Context menu helpers: greyed-out options that explain themselves
+-- ============================================================================
+
+local MSG_NO_PZFB = "PZFB's class files are not installed. Load into a game once so PZFB can show its setup panel, "
+                 .. "run the generated installer, then restart Project Zomboid."
+local MSG_RANGE   = " within " .. tostring(SCAN_RANGE) .. " tiles on this floor"
+
+local function newTooltip(isWorld)
+    local tip = nil
+    if isWorld and ISWorldObjectContextMenu and ISWorldObjectContextMenu.addToolTip then
+        tip = ISWorldObjectContextMenu.addToolTip()
+    elseif (not isWorld) and ISInventoryPaneContextMenu and ISInventoryPaneContextMenu.addToolTip then
+        tip = ISInventoryPaneContextMenu.addToolTip()
+    end
+    if not tip then
+        tip = ISToolTip:new()
+        tip:initialise()
+    end
+    tip:setVisible(false)
+    return tip
+end
+
+--- Add "label" to the context menu. When `reason` is non-nil the option is shown
+--- disabled (option.notAvailable, verified pattern from ISWorldObjectContextMenu)
+--- with `reason` as its tooltip; otherwise it is clickable.
+local function addPlayOption(context, isWorld, label, reason, target, onSelect, p1, p2, p3)
+    local option
+    if reason then
+        option = context:addOption(label, target, nil)
+        option.notAvailable = true
+        local tip = newTooltip(isWorld)
+        tip:setName(label)
+        tip.description = reason
+        option.toolTip = tip
+    else
+        option = context:addOption(label, target, onSelect, p1, p2, p3)
+    end
+    return option
+end
+
+local function pzfbReady()
+    return PZFB ~= nil and PZFB.isAvailable ~= nil and PZFB.isAvailable()
+end
+
+-- ============================================================================
 -- Context menu callbacks
 -- ============================================================================
 
-local function onPlayConsole(playerObj, consoleId)
+local function onPlayConsole(playerObj, consoleId, handheldItem)
     local console = PZEMUGame.getConsoleById(consoleId)
     if not console then return end
 
     local carts = PZEMUMain.scanNearbyCartridges(playerObj, SCAN_RANGE, consoleId)
     local cartList = buildCartridgeList(carts)
-    PZEMUWindow.openWithContext(console, cartList)
+    local opts = nil
+    if handheldItem then opts = { handheldItem = handheldItem } end
+    PZEMUWindow.openWithContext(console, cartList, opts)
 end
 
-local function onPlayCartridge(playerObj, cartItem)
+local function onPlayCartridge(playerObj, cartItem, handheldItem)
     local systemId = CART_TYPE_TO_SYSTEM[cartItem:getFullType()]
     if not systemId then return end
 
@@ -323,7 +436,9 @@ local function onPlayCartridge(playerObj, cartItem)
 
     local data = getCartridgeData(cartItem)
     if data.romFile then
-        PZEMUWindow.openWithGame(console, data)
+        local opts = nil
+        if handheldItem then opts = { handheldItem = handheldItem } end
+        PZEMUWindow.openWithGame(console, data, opts)
     end
 end
 
@@ -333,41 +448,54 @@ end
 
 Events.OnFillWorldObjectContextMenu.Add(function(player, context, worldobjects, test)
     if test and ISWorldObjectContextMenu.Test then return true end
-    if not PZFB or not PZFB.isAvailable() then return end
 
     local tvObject = nil
     for _, object in ipairs(worldobjects) do
-        if instanceof(object, "IsoWaveSignal") and object:getSprite()
-           and not object:getModData().RadioItemID then
+        if isTelevision(object) then
             tvObject = object
             break
         end
     end
     if not tvObject then return end
 
-    local tvSquare = tvObject:getSquare()
-    if not tvSquare or not hasPower(tvSquare) then return end
-
     local playerObj = getSpecificPlayer(player)
     if not playerObj then return end
+
+    local tvSquare = tvObject:getSquare()
+    local powered = tvSquare ~= nil and hasPower(tvSquare)
 
     local consoles = PZEMUMain.scanNearbyConsoles(playerObj, SCAN_RANGE)
 
     local systemsFound = {}
+    local order = {}
     for _, item in ipairs(consoles) do
         local ft = item:getFullType()
         if not HANDHELD_TYPES[ft] then
             local cid = CONSOLE_TYPE_TO_ID[ft]
             if cid and not systemsFound[cid] then
                 systemsFound[cid] = true
+                table.insert(order, cid)
             end
         end
     end
+    -- A TV with no console anywhere near it gets no PZEMU entries at all.
+    if #order == 0 then return end
 
-    for consoleId, _ in pairs(systemsFound) do
+    for _, consoleId in ipairs(order) do
         local console = PZEMUGame.getConsoleById(consoleId)
         if console then
-            context:addOption("Play " .. console.displayName, playerObj, onPlayConsole, consoleId)
+            local reason = nil
+            if not pzfbReady() then
+                reason = MSG_NO_PZFB
+            elseif not powered then
+                reason = "This TV has no power. Restore grid power or run a generator nearby."
+            else
+                local carts = PZEMUMain.scanNearbyCartridges(playerObj, SCAN_RANGE, consoleId)
+                if #carts == 0 then
+                    reason = "No " .. console.displayName .. " cartridges" .. MSG_RANGE .. ". Bring a game."
+                end
+            end
+            addPlayOption(context, true, "Play " .. console.displayName, reason, playerObj, onPlayConsole, consoleId)
         end
     end
 end)
@@ -377,9 +505,18 @@ end)
 -- Wrapped in pcall to never break the vanilla context menu system
 -- ============================================================================
 
-local function inventoryContextMenuHandler(player, context, items)
-    if not PZFB or not PZFB.isAvailable() then return end
+local function tvReason(playerObj)
+    local tv, powered = PZEMUMain.findNearbyTVStatus(playerObj, SCAN_RANGE)
+    if not tv then
+        return "No TV" .. MSG_RANGE .. ". Stand closer to a television."
+    end
+    if not powered then
+        return "The TV nearby has no power. Restore grid power or run a generator."
+    end
+    return nil
+end
 
+local function inventoryContextMenuHandler(player, context, items)
     local playerObj = getSpecificPlayer(player)
     if not playerObj then return end
 
@@ -398,59 +535,74 @@ local function inventoryContextMenuHandler(player, context, items)
             local console = PZEMUGame.getConsoleById(consoleId)
             if not console then return end
 
-            if HANDHELD_TYPES[fullType] then
-                local usesFloat = item:getCurrentUsesFloat()
-                if usesFloat and usesFloat > 0 then
-                    local carts = PZEMUMain.scanNearbyCartridges(playerObj, SCAN_RANGE, consoleId)
-                    if #carts > 0 then
-                        context:addOption("Play " .. console.displayName, playerObj, onPlayConsole, consoleId)
-                    end
+            local reason = nil
+            local handheld = nil
+            if not pzfbReady() then
+                reason = MSG_NO_PZFB
+            elseif HANDHELD_TYPES[fullType] then
+                handheld = item
+                if not handheldHasCharge(item) then
+                    reason = "The batteries are dead. Right-click the " .. console.displayName
+                          .. " -> Insert Battery (needs a charged Battery)."
                 end
             else
-                local tv = PZEMUMain.findNearbyTV(playerObj, SCAN_RANGE)
-                if tv then
-                    local carts = PZEMUMain.scanNearbyCartridges(playerObj, SCAN_RANGE, consoleId)
-                    if #carts > 0 then
-                        context:addOption("Play " .. console.displayName, playerObj, onPlayConsole, consoleId)
-                    end
+                reason = tvReason(playerObj)
+            end
+            if not reason then
+                local carts = PZEMUMain.scanNearbyCartridges(playerObj, SCAN_RANGE, consoleId)
+                if #carts == 0 then
+                    reason = "No " .. console.displayName .. " cartridges" .. MSG_RANGE .. "."
                 end
             end
+            addPlayOption(context, false, "Play " .. console.displayName, reason,
+                          playerObj, onPlayConsole, consoleId, handheld)
             return
         end
 
         -- Cartridge right-click
         local systemId = CART_TYPE_TO_SYSTEM[fullType]
         if systemId then
-            local consoles = PZEMUMain.scanNearbyConsoles(playerObj, SCAN_RANGE)
-            local consoleFound = false
-            local isHandheld = false
-            for _, con in ipairs(consoles) do
-                local conType = con:getFullType()
-                local conSystem = CONSOLE_TYPE_TO_ID[conType]
-                if conSystem == systemId then
-                    if HANDHELD_TYPES[conType] then
-                        local usesFloat = con:getCurrentUsesFloat()
-                        if usesFloat and usesFloat > 0 then
-                            consoleFound = true
-                            isHandheld = true
+            local console = PZEMUGame.getConsoleById(systemId)
+            if not console then return end
+            fixLegacyCartName(item, systemId)
+            local data = getCartridgeData(item)
+            local label = "Play " .. (data.gameName or item:getName())
+
+            local reason = nil
+            local handheld = nil
+            if not pzfbReady() then
+                reason = MSG_NO_PZFB
+            elseif not data.romFile then
+                reason = "This cartridge carries no game data (spawned outside the loot system?). It cannot be played."
+            else
+                local consoles = PZEMUMain.scanNearbyConsoles(playerObj, SCAN_RANGE)
+                local stationary = false
+                local deadHandheld = nil
+                for _, con in ipairs(consoles) do
+                    local conType = con:getFullType()
+                    if CONSOLE_TYPE_TO_ID[conType] == systemId then
+                        if HANDHELD_TYPES[conType] then
+                            if handheldHasCharge(con) then
+                                if not handheld then handheld = con end
+                            else
+                                deadHandheld = con
+                            end
+                        else
+                            stationary = true
                         end
-                    else
-                        consoleFound = true
                     end
-                    if consoleFound then break end
+                end
+                if handheld then
+                    reason = nil
+                elseif stationary then
+                    reason = tvReason(playerObj)
+                elseif deadHandheld then
+                    reason = "The " .. console.displayName .. " nearby has dead batteries. Right-click it -> Insert Battery."
+                else
+                    reason = "No " .. console.displayName .. MSG_RANGE .. "."
                 end
             end
-            if not consoleFound then return end
-
-            if not isHandheld then
-                local tv = PZEMUMain.findNearbyTV(playerObj, SCAN_RANGE)
-                if not tv then return end
-            end
-
-            local data = getCartridgeData(item)
-            if data.gameName then
-                context:addOption("Play " .. data.gameName, playerObj, onPlayCartridge, item)
-            end
+            addPlayOption(context, false, label, reason, playerObj, onPlayCartridge, item, handheld)
             return
         end
     end
@@ -482,7 +634,7 @@ local function onTick()
     end
 
     local game = PZEMUWindow.instance.game
-    if not game or game.state ~= "RUNNING" then
+    if not game or game.state ~= "RUNNING" or game.paused or game.batteryDead then
         moodTickCounter = 0
         return
     end
@@ -507,8 +659,9 @@ Events.OnTick.Add(onTick)
 -- ============================================================================
 
 Events.OnGameStart.Add(function()
-    if PZFB and PZFB.isAvailable() then
-        print("[PZEMU] PZFB available, version " .. tostring(PZFB.getVersion()))
+    if pzfbReady() then
+        local sessions = (PZEMUGame.hasSessions and PZEMUGame.hasSessions()) and "session API" or "legacy slot"
+        print("[PZEMU] PZFB available, version " .. tostring(PZFB.getVersion()) .. " (" .. sessions .. ")")
     else
         print("[PZEMU] WARNING: PZFB not available — emulation will not work")
     end

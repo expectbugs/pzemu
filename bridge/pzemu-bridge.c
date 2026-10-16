@@ -8,7 +8,32 @@
  *
  * Protocol:
  *   stdout → raw RGBA frames (width * height * 4 bytes each), continuous
- *   stdin  ← key events (2 bytes each: [pressed:u8, keycode:u8])
+ *   stdin  ← events (2 bytes each: [value:u8, keycode:u8])
+ *
+ *   keycode  0–15  libretro joypad button, value 1 = pressed / 0 = released
+ *   keycode  16    save state            (on value != 0)
+ *   keycode  17    load state            (on value != 0)
+ *   keycode  18    pause TOGGLE (legacy) (on value != 0)
+ *   keycode  19    PAUSE ON   (idempotent, on value != 0)
+ *   keycode  20    PAUSE OFF  (idempotent, on value != 0)
+ *   keycode  21    QUIT — flush SRAM and exit cleanly (on value != 0)
+ *   keycode  64–67 analog axes leftX/leftY/rightX/rightY, value 0..255 (128 = center)
+ *   keycode  68    VOLUME, value 0..255 → linear gain value/255 (0 = mute); default 255
+ *
+ *   stdin EOF / broken pipe, frame-pipe write failure, SIGTERM/SIGINT and
+ *   RETRO_ENVIRONMENT_SHUTDOWN all behave like QUIT.
+ *
+ * Persistence:
+ *   SRAM  → <save_dir>/<rom>.srm   written on exit (exactly once) and every
+ *           SRAM_FLUSH_INTERVAL_MS while running if its contents changed.
+ *   state → <save_dir>/<rom>.state
+ *   All writes are atomic: temp file in the same directory, then rename.
+ *
+ * Paths are UTF-8 everywhere internally. On Windows argv is re-derived from
+ * the wide command line and every file/library API is called through the
+ * wide-char variant (_wfopen, LoadLibraryW, _wmkdir, MoveFileExW), so paths
+ * outside the ANSI codepage work. Cores receive UTF-8 as the libretro API
+ * requires.
  */
 
 #include "libretro.h"
@@ -26,10 +51,11 @@
 
 #ifdef _WIN32
 #include <windows.h>
+#include <shellapi.h>
 #include <io.h>
 #include <fcntl.h>
 #include <direct.h>
-#define load_lib(p)      LoadLibraryA(p)
+#include <wchar.h>
 #define load_func(h, s)  ((void*)GetProcAddress((HMODULE)(h), s))
 #define close_lib(h)     FreeLibrary((HMODULE)(h))
 /* MinGW lacks strndup */
@@ -45,12 +71,16 @@ static char *strndup_compat(const char *s, size_t n) {
 #include <dlfcn.h>
 #include <unistd.h>
 #include <fcntl.h>
-#define load_lib(p)      dlopen(p, RTLD_LAZY)
 #define load_func(h, s)  dlsym(h, s)
 #define close_lib(h)     dlclose(h)
 #endif
 
 #include <SDL.h>
+
+/* ---------- tunables ---------- */
+
+#define SRAM_FLUSH_INTERVAL_MS 10000   /* periodic SRAM flush cadence (wall time) */
+#define PATH_BUF               4096    /* max UTF-8 path length we handle */
 
 /* ---------- helpers ---------- */
 
@@ -67,6 +97,104 @@ static void die(const char *fmt, ...) {
     if (!((*(void**)&(V)) = load_func(g_core_handle, #S))) \
         die("Failed to load symbol '" #S "'"); \
 } while (0)
+
+/* ---------- UTF-8 path layer (Windows wide-char, POSIX passthrough) ---------- */
+
+#ifdef _WIN32
+/* UTF-8 → UTF-16, malloc'd; NULL on failure. */
+static wchar_t *utf8_to_wide(const char *s) {
+    if (!s) return NULL;
+    int n = MultiByteToWideChar(CP_UTF8, 0, s, -1, NULL, 0);
+    if (n <= 0) return NULL;
+    wchar_t *w = (wchar_t *)malloc((size_t)n * sizeof(wchar_t));
+    if (!w) return NULL;
+    if (MultiByteToWideChar(CP_UTF8, 0, s, -1, w, n) <= 0) { free(w); return NULL; }
+    return w;
+}
+
+/* UTF-16 → UTF-8, malloc'd; NULL on failure. */
+static char *wide_to_utf8(const wchar_t *w) {
+    if (!w) return NULL;
+    int n = WideCharToMultiByte(CP_UTF8, 0, w, -1, NULL, 0, NULL, NULL);
+    if (n <= 0) return NULL;
+    char *s = (char *)malloc((size_t)n);
+    if (!s) return NULL;
+    if (WideCharToMultiByte(CP_UTF8, 0, w, -1, s, n, NULL, NULL) <= 0) { free(s); return NULL; }
+    return s;
+}
+
+static FILE *fopen_utf8(const char *path, const char *mode) {
+    wchar_t wmode[8] = {0};
+    size_t i;
+    for (i = 0; i < 7 && mode[i]; i++) wmode[i] = (wchar_t)(unsigned char)mode[i];
+    wchar_t *wpath = utf8_to_wide(path);
+    if (!wpath) return NULL;
+    FILE *f = _wfopen(wpath, wmode);
+    free(wpath);
+    return f;
+}
+
+static int mkdir_utf8(const char *path) {
+    wchar_t *wpath = utf8_to_wide(path);
+    if (!wpath) return -1;
+    int r = _wmkdir(wpath);
+    free(wpath);
+    return r;
+}
+
+static int remove_utf8(const char *path) {
+    wchar_t *wpath = utf8_to_wide(path);
+    if (!wpath) return -1;
+    int r = _wremove(wpath);
+    free(wpath);
+    return r;
+}
+
+/* Atomically replace dst with src (both UTF-8). */
+static bool replace_file_utf8(const char *src, const char *dst) {
+    wchar_t *wsrc = utf8_to_wide(src);
+    wchar_t *wdst = utf8_to_wide(dst);
+    bool ok = false;
+    if (wsrc && wdst)
+        ok = MoveFileExW(wsrc, wdst, MOVEFILE_REPLACE_EXISTING) != 0;
+    if (!ok)
+        fprintf(stderr, "[pzemu] MoveFileExW failed (error %lu)\n", (unsigned long)GetLastError());
+    free(wsrc);
+    free(wdst);
+    return ok;
+}
+
+static bool sync_file(FILE *f) {
+    return _commit(_fileno(f)) == 0;
+}
+
+static void *load_lib(const char *path) {
+    wchar_t *wpath = utf8_to_wide(path);
+    if (!wpath) return NULL;
+    HMODULE h = LoadLibraryW(wpath);
+    if (!h)
+        fprintf(stderr, "[pzemu] LoadLibraryW failed (error %lu)\n", (unsigned long)GetLastError());
+    free(wpath);
+    return (void *)h;
+}
+#else
+static FILE *fopen_utf8(const char *path, const char *mode) { return fopen(path, mode); }
+static int   mkdir_utf8(const char *path)                   { return mkdir(path, 0755); }
+static int   remove_utf8(const char *path)                  { return remove(path); }
+static bool  replace_file_utf8(const char *src, const char *dst) {
+    if (rename(src, dst) != 0) {
+        fprintf(stderr, "[pzemu] rename failed: %s\n", strerror(errno));
+        return false;
+    }
+    return true;
+}
+static bool  sync_file(FILE *f)                             { return fsync(fileno(f)) == 0; }
+static void *load_lib(const char *path) {
+    void *h = dlopen(path, RTLD_LAZY);
+    if (!h) fprintf(stderr, "[pzemu] dlopen: %s\n", dlerror());
+    return h;
+}
+#endif
 
 /* ---------- global state ---------- */
 
@@ -93,6 +221,13 @@ static size_t   g_rgba_buf_size = 0;
 /* SDL2 audio */
 static SDL_AudioDeviceID g_audio_dev = 0;
 
+/* master volume: 0..255 linear gain numerator (gain = g_volume / 255). 255 = unity. */
+static int g_volume = 255;
+
+/* scratch buffer for gain-scaled audio batches */
+static int16_t *g_audio_scratch        = NULL;
+static size_t   g_audio_scratch_frames = 0;
+
 /* directories */
 static const char *g_system_dir = ".";
 static const char *g_save_dir   = ".";
@@ -101,8 +236,12 @@ static const char *g_save_dir   = ".";
  * Different cores expect different values. PSX/PSP/N64 use core-specific subclass IDs. */
 static unsigned g_port_device = RETRO_DEVICE_JOYPAD;
 
-/* shutdown flag — set by RETRO_ENVIRONMENT_SHUTDOWN */
-static bool g_shutdown = false;
+/* shutdown flag — set by QUIT, stdin EOF, frame-pipe failure, signals, RETRO_ENVIRONMENT_SHUTDOWN.
+ * volatile: written from the signal handler. */
+static volatile sig_atomic_t g_shutdown = 0;
+
+/* stdin has reached EOF / broken — stop polling it */
+static bool g_stdin_closed = false;
 
 /* core options */
 #define MAX_VARS 256
@@ -135,7 +274,10 @@ static bool     (*p_retro_unserialize)(const void *, size_t);
 /* ---------- meta-command IDs (keycode >= 16, not sent to core) ---------- */
 #define META_SAVE_STATE  16
 #define META_LOAD_STATE  17
-#define META_PAUSE       18
+#define META_PAUSE       18   /* legacy toggle */
+#define META_PAUSE_ON    19
+#define META_PAUSE_OFF   20
+#define META_QUIT        21
 
 /* analog axis events (wire keycodes 64..67, value packed in `pressed` byte) */
 #define AXIS_BASE      64
@@ -144,11 +286,38 @@ static bool     (*p_retro_unserialize)(const void *, size_t);
 #define AXIS_RIGHT_X    2
 #define AXIS_RIGHT_Y    3
 
+/* volume event (wire keycode 68, gain packed in `pressed` byte) */
+#define META_VOLUME    68
+
 static bool g_paused = false;
 
-/* forward declarations for meta-command handlers */
+/* forward declarations */
 static void do_save_state(void);
 static void do_load_state(void);
+
+/* ---------- quit / pause control ---------- */
+
+static void request_quit(const char *why) {
+    if (g_shutdown) return;
+    g_shutdown = 1;
+    fprintf(stderr, "[pzemu] Quit requested: %s\n", why);
+}
+
+static void set_paused(bool paused, const char *why) {
+    if (g_paused == paused) return;
+    g_paused = paused;
+    if (g_audio_dev)
+        SDL_PauseAudioDevice(g_audio_dev, paused ? 1 : 0);
+    fprintf(stderr, "[pzemu] %s (%s)\n", paused ? "Paused" : "Resumed", why);
+}
+
+static void set_volume(int vol) {
+    if (vol < 0) vol = 0;
+    if (vol > 255) vol = 255;
+    if (vol == g_volume) return;
+    g_volume = vol;
+    fprintf(stderr, "[pzemu] Volume %d/255\n", g_volume);
+}
 
 /* ---------- environment callback ---------- */
 
@@ -170,7 +339,7 @@ static bool RETRO_CALLCONV environment_cb(unsigned cmd, void *data) {
         return true;
 
     case 7: /* RETRO_ENVIRONMENT_SHUTDOWN */
-        g_shutdown = true;
+        request_quit("core requested shutdown");
         return true;
 
     case 8: /* RETRO_ENVIRONMENT_SET_PERFORMANCE_LEVEL */
@@ -270,6 +439,7 @@ static void RETRO_CALLCONV video_refresh_cb(const void *data,
                                              size_t pitch)
 {
     if (!data) return; /* dupe frame — GET_CAN_DUPE was true */
+    if (g_shutdown) return; /* frame pipe already dead or quitting — don't block in fwrite */
 
     size_t needed = (size_t)g_frame_width * g_frame_height * 4;
     if (needed > g_rgba_buf_size) {
@@ -332,11 +502,11 @@ static void RETRO_CALLCONV video_refresh_cb(const void *data,
     }
 
     size_t written = fwrite(g_rgba_buf, 1, needed, g_frame_out);
-    if (written != needed) {
-        g_shutdown = true; /* pipe closed — exit cleanly so atexit runs */
+    if (written != needed || fflush(g_frame_out) != 0) {
+        /* pipe closed (or write interrupted by SIGTERM) — exit cleanly so SRAM is saved */
+        request_quit("frame pipe write failed");
         return;
     }
-    fflush(g_frame_out);
 }
 
 /* ---------- input handling ---------- */
@@ -355,65 +525,139 @@ static void handle_key_event(uint8_t pressed, uint8_t keycode) {
         return;
     }
 
+    /* volume: value byte IS the gain (0 = mute … 255 = unity), not a press flag */
+    if (keycode == META_VOLUME) {
+        set_volume(pressed);
+        return;
+    }
+
     /* meta-commands — trigger on press only */
     if (pressed) {
         switch (keycode) {
         case META_SAVE_STATE: do_save_state(); break;
         case META_LOAD_STATE: do_load_state(); break;
-        case META_PAUSE:
-            g_paused = !g_paused;
-            if (g_audio_dev)
-                SDL_PauseAudioDevice(g_audio_dev, g_paused ? 1 : 0);
-            fprintf(stderr, "[pzemu] %s\n", g_paused ? "Paused" : "Resumed");
-            break;
+        case META_PAUSE:      set_paused(!g_paused, "toggle"); break;
+        case META_PAUSE_ON:   set_paused(true,  "pause on");  break;
+        case META_PAUSE_OFF:  set_paused(false, "pause off"); break;
+        case META_QUIT:       request_quit("QUIT command"); break;
         default: break;
         }
     }
 }
 
-#ifdef _WIN32
-static void poll_stdin_keys(void) {
-    HANDLE hStdin = GetStdHandle(STD_INPUT_HANDLE);
-    DWORD avail = 0;
-    while (PeekNamedPipe(hStdin, NULL, 0, NULL, &avail, NULL) && avail >= 2) {
-        uint8_t buf[2];
-        DWORD bytesRead = 0;
-        if (ReadFile(hStdin, buf, 2, &bytesRead, NULL) && bytesRead == 2) {
-            handle_key_event(buf[0], buf[1]); /* [pressed, keycode] */
-        } else {
-            break;
-        }
-    }
+/* stdin reached EOF or the pipe broke: the parent is gone or wants us to stop. */
+static void stdin_eof(const char *why) {
+    if (g_stdin_closed) return;
+    g_stdin_closed = true;
+    request_quit(why);
 }
-#else
+
+/* first byte of a split 2-byte event, or -1 (AVOID.md #3) */
 static int s_pending_byte = -1;
 
+#ifdef _WIN32
+/* Windows: a background thread blocks in ReadFile() on stdin and feeds a ring
+ * buffer that the main thread drains once per frame. This works identically
+ * for the anonymous pipes Java creates, named pipes, consoles and Wine, and
+ * sees EOF / ERROR_BROKEN_PIPE the moment the parent closes its end.
+ * (PeekNamedPipe-based polling only works on real pipe objects and silently
+ * ignores input on anything else.) */
+#define STDIN_RING 65536
+static CRITICAL_SECTION g_stdin_cs;
+static uint8_t  g_stdin_ring[STDIN_RING];
+static size_t   g_stdin_head  = 0;
+static size_t   g_stdin_count = 0;
+static volatile LONG g_stdin_thread_eof = 0;
+
+static DWORD WINAPI stdin_thread_main(LPVOID arg) {
+    HANDLE h = (HANDLE)arg;
+    uint8_t buf[256];
+    for (;;) {
+        DWORD got = 0;
+        BOOL ok = ReadFile(h, buf, sizeof(buf), &got, NULL);
+        if (!ok || got == 0) break; /* EOF or broken pipe (ERROR_BROKEN_PIPE) */
+        for (DWORD i = 0; i < got; ) {
+            EnterCriticalSection(&g_stdin_cs);
+            while (i < got && g_stdin_count < STDIN_RING) {
+                g_stdin_ring[(g_stdin_head + g_stdin_count) % STDIN_RING] = buf[i++];
+                g_stdin_count++;
+            }
+            LeaveCriticalSection(&g_stdin_cs);
+            if (i < got) Sleep(1); /* ring full — back-pressure, never drop a byte */
+        }
+    }
+    InterlockedExchange(&g_stdin_thread_eof, 1);
+    return 0;
+}
+
+static void start_stdin_thread(void) {
+    InitializeCriticalSection(&g_stdin_cs);
+    HANDLE h = GetStdHandle(STD_INPUT_HANDLE);
+    if (h == NULL || h == INVALID_HANDLE_VALUE) {
+        fprintf(stderr, "[pzemu] No stdin handle — input and EOF detection disabled\n");
+        return;
+    }
+    HANDLE t = CreateThread(NULL, 0, stdin_thread_main, h, 0, NULL);
+    if (!t)
+        fprintf(stderr, "[pzemu] Failed to start stdin reader thread (error %lu)\n",
+                (unsigned long)GetLastError());
+    else
+        CloseHandle(t); /* detached; dies with the process */
+}
+
 static void poll_stdin_keys(void) {
+    if (g_stdin_closed) return;
+
+    static uint8_t local[STDIN_RING];
+    size_t n = 0;
+    EnterCriticalSection(&g_stdin_cs);
+    while (g_stdin_count > 0) {
+        local[n++] = g_stdin_ring[g_stdin_head];
+        g_stdin_head = (g_stdin_head + 1) % STDIN_RING;
+        g_stdin_count--;
+    }
+    LeaveCriticalSection(&g_stdin_cs);
+
+    for (size_t i = 0; i < n; i++) {
+        if (s_pending_byte >= 0) {
+            handle_key_event((uint8_t)s_pending_byte, local[i]); /* [pressed, keycode] */
+            s_pending_byte = -1;
+        } else {
+            s_pending_byte = local[i];
+        }
+    }
+
+    /* the thread sets the flag only after pushing its last bytes, so everything
+     * the parent sent before closing has been handled by now */
+    if (g_stdin_thread_eof) stdin_eof("stdin EOF");
+}
+#else
+static void poll_stdin_keys(void) {
+    if (g_stdin_closed) return;
     uint8_t buf[2];
-    while (1) {
+    for (;;) {
         if (s_pending_byte >= 0) {
             buf[0] = (uint8_t)s_pending_byte;
-            s_pending_byte = -1;
             ssize_t n = read(STDIN_FILENO, &buf[1], 1);
             if (n == 1) {
+                s_pending_byte = -1;
                 handle_key_event(buf[0], buf[1]); /* [pressed, keycode] */
                 continue;
-            } else if (errno == EAGAIN || errno == EWOULDBLOCK) {
-                s_pending_byte = buf[0]; /* re-buffer */
-                break;
-            } else {
-                break; /* pipe dead */
             }
+            if (n == 0) { stdin_eof("stdin EOF"); return; }
+            if (errno == EINTR) continue;
+            if (errno == EAGAIN || errno == EWOULDBLOCK) return; /* keep pending byte */
+            stdin_eof("stdin read error");
+            return;
         }
         ssize_t n = read(STDIN_FILENO, buf, 2);
-        if (n == 2) {
-            handle_key_event(buf[0], buf[1]);
-        } else if (n == 1) {
-            s_pending_byte = buf[0];
-            break;
-        } else {
-            break;
-        }
+        if (n == 2) { handle_key_event(buf[0], buf[1]); continue; }
+        if (n == 1) { s_pending_byte = buf[0]; continue; } /* try for the 2nd byte */
+        if (n == 0) { stdin_eof("stdin EOF"); return; }
+        if (errno == EINTR) continue;
+        if (errno == EAGAIN || errno == EWOULDBLOCK) return;
+        stdin_eof("stdin read error");
+        return;
     }
 }
 #endif
@@ -462,9 +706,16 @@ static int16_t RETRO_CALLCONV input_state_cb(unsigned port, unsigned device,
 
 /* ---------- audio callbacks ---------- */
 
+static inline int16_t scale_sample(int16_t s) {
+    int32_t v = ((int32_t)s * g_volume) / 255;
+    if (v >  32767) v =  32767;
+    if (v < -32768) v = -32768;
+    return (int16_t)v;
+}
+
 static void RETRO_CALLCONV audio_sample_cb(int16_t left, int16_t right) {
     if (!g_audio_dev) return;
-    int16_t buf[2] = { left, right };
+    int16_t buf[2] = { scale_sample(left), scale_sample(right) };
     SDL_QueueAudio(g_audio_dev, buf, 4);
 }
 
@@ -478,16 +729,87 @@ static size_t RETRO_CALLCONV audio_batch_cb(const int16_t *data, size_t frames) 
     if (SDL_GetQueuedAudioSize(g_audio_dev) > batch_bytes * 8)
         SDL_ClearQueuedAudio(g_audio_dev);
 
-    SDL_QueueAudio(g_audio_dev, data, batch_bytes);
+    if (g_volume == 255) {
+        SDL_QueueAudio(g_audio_dev, data, batch_bytes);
+        return frames;
+    }
+
+    /* gain != unity: scale into a scratch buffer (muted = queue silence so the
+     * device keeps consuming at the same rate — never stalls or skips) */
+    if (frames > g_audio_scratch_frames) {
+        int16_t *nb = (int16_t *)realloc(g_audio_scratch, frames * 2 * sizeof(int16_t));
+        if (!nb) return frames; /* drop this batch rather than crash */
+        g_audio_scratch = nb;
+        g_audio_scratch_frames = frames;
+    }
+    if (g_volume == 0) {
+        memset(g_audio_scratch, 0, batch_bytes);
+    } else {
+        size_t samples = frames * 2;
+        for (size_t i = 0; i < samples; i++)
+            g_audio_scratch[i] = scale_sample(data[i]);
+    }
+    SDL_QueueAudio(g_audio_dev, g_audio_scratch, batch_bytes);
     return frames;
 }
 
-/* ---------- SRAM persistence ---------- */
+/* ---------- atomic file writes ---------- */
 
-static char g_srm_path[4096] = {0};
+static void ensure_directory(const char *path) {
+    /* Create directory and parents (best-effort, ignore errors) */
+    char tmp[PATH_BUF];
+    strncpy(tmp, path, sizeof(tmp) - 1);
+    tmp[sizeof(tmp) - 1] = '\0';
+    for (char *p = tmp + 1; *p; p++) {
+        if (*p == '/' || *p == '\\') {
+            char saved = *p;
+            *p = '\0';
+            mkdir_utf8(tmp);
+            *p = saved;
+        }
+    }
+    mkdir_utf8(tmp);
+}
 
-static void build_srm_path(const char *rom_path, const char *save_dir) {
-    /* extract ROM basename without extension */
+/* Write `size` bytes to `path` atomically: <path>.tmp in the same directory,
+ * fsync, then rename over the destination. On any failure the previous file
+ * is left untouched and the temp file is removed. */
+static bool write_file_atomic(const char *path, const void *data, size_t size) {
+    char tmp[PATH_BUF + 8];
+    int n = snprintf(tmp, sizeof(tmp), "%s.tmp", path);
+    if (n < 0 || (size_t)n >= sizeof(tmp)) {
+        fprintf(stderr, "[pzemu] Path too long for temp file: %s\n", path);
+        return false;
+    }
+
+    FILE *f = fopen_utf8(tmp, "wb");
+    if (!f) {
+        fprintf(stderr, "[pzemu] Failed to open %s for writing: %s\n", tmp, strerror(errno));
+        return false;
+    }
+
+    bool ok = fwrite(data, 1, size, f) == size;
+    if (ok && fflush(f) != 0) ok = false;
+    if (ok && !sync_file(f)) ok = false;
+    if (fclose(f) != 0) ok = false;
+
+    if (!ok) {
+        fprintf(stderr, "[pzemu] Failed to write %s: %s\n", tmp, strerror(errno));
+        remove_utf8(tmp);
+        return false;
+    }
+    if (!replace_file_utf8(tmp, path)) {
+        fprintf(stderr, "[pzemu] Failed to replace %s\n", path);
+        remove_utf8(tmp);
+        return false;
+    }
+    return true;
+}
+
+/* <save_dir>/<rom basename without extension><ext> */
+static void build_save_path(char *out, size_t out_size,
+                            const char *rom_path, const char *save_dir, const char *ext)
+{
     const char *slash = strrchr(rom_path, '/');
 #ifdef _WIN32
     const char *bslash = strrchr(rom_path, '\\');
@@ -495,14 +817,48 @@ static void build_srm_path(const char *rom_path, const char *save_dir) {
 #endif
     const char *basename = slash ? slash + 1 : rom_path;
 
-    char name[256];
+    char name[1024];
     strncpy(name, basename, sizeof(name) - 1);
     name[sizeof(name) - 1] = '\0';
 
     char *dot = strrchr(name, '.');
     if (dot) *dot = '\0';
 
-    snprintf(g_srm_path, sizeof(g_srm_path), "%s/%s.srm", save_dir, name);
+    snprintf(out, out_size, "%s/%s%s", save_dir, name, ext);
+}
+
+/* ---------- SRAM persistence ---------- */
+
+static char g_srm_path[PATH_BUF] = {0};
+
+/* copy of the SRAM contents as last written to (or loaded from) disk */
+static uint8_t *g_sram_shadow      = NULL;
+static size_t   g_sram_shadow_size = 0;
+
+static void sram_shadow_sync(const void *sram, size_t size) {
+    if (size != g_sram_shadow_size) {
+        uint8_t *nb = (uint8_t *)realloc(g_sram_shadow, size);
+        if (!nb) { free(g_sram_shadow); g_sram_shadow = NULL; g_sram_shadow_size = 0; return; }
+        g_sram_shadow = nb;
+        g_sram_shadow_size = size;
+    }
+    memcpy(g_sram_shadow, sram, size);
+}
+
+static bool sram_changed(const void *sram, size_t size) {
+    if (!g_sram_shadow || g_sram_shadow_size != size) return true;
+    return memcmp(g_sram_shadow, sram, size) != 0;
+}
+
+static bool sram_write(const void *sram, size_t size, const char *why) {
+    ensure_directory(g_save_dir);
+    if (!write_file_atomic(g_srm_path, sram, size)) {
+        fprintf(stderr, "[pzemu] Failed to save SRAM to %s (%s)\n", g_srm_path, why);
+        return false;
+    }
+    sram_shadow_sync(sram, size);
+    fprintf(stderr, "[pzemu] Saved SRAM to %s (%zu bytes, %s)\n", g_srm_path, size, why);
+    return true;
 }
 
 static void load_sram(void) {
@@ -510,80 +866,43 @@ static void load_sram(void) {
     size_t sram_size = p_retro_get_memory_size(RETRO_MEMORY_SAVE_RAM);
     if (!sram || sram_size == 0 || g_srm_path[0] == '\0') return;
 
-    FILE *f = fopen(g_srm_path, "rb");
+    FILE *f = fopen_utf8(g_srm_path, "rb");
     if (f) {
         size_t n = fread(sram, 1, sram_size, f);
         fclose(f);
         fprintf(stderr, "[pzemu] Loaded SRAM from %s (%zu bytes)\n", g_srm_path, n);
     }
+    /* baseline for change detection — whatever the core holds now (file or defaults) */
+    sram_shadow_sync(sram, sram_size);
 }
 
-static void ensure_directory(const char *path) {
-    /* Create directory and parents (best-effort, ignore errors) */
-    char tmp[4096];
-    strncpy(tmp, path, sizeof(tmp) - 1);
-    tmp[sizeof(tmp) - 1] = '\0';
-    for (char *p = tmp + 1; *p; p++) {
-        if (*p == '/' || *p == '\\') {
-            *p = '\0';
-#ifdef _WIN32
-            _mkdir(tmp);
-#else
-            mkdir(tmp, 0755);
-#endif
-            *p = '/';
-        }
-    }
-#ifdef _WIN32
-    _mkdir(tmp);
-#else
-    mkdir(tmp, 0755);
-#endif
+/* Periodic flush: write SRAM only if it differs from what is on disk. Called
+ * from the main loop between retro_run() calls — never mid-frame. */
+static void flush_sram_if_changed(void) {
+    void *sram = p_retro_get_memory_data(RETRO_MEMORY_SAVE_RAM);
+    size_t sram_size = p_retro_get_memory_size(RETRO_MEMORY_SAVE_RAM);
+    if (!sram || sram_size == 0 || g_srm_path[0] == '\0') return;
+    if (!sram_changed(sram, sram_size)) return;
+    sram_write(sram, sram_size, "periodic flush");
 }
 
+/* Final save — runs exactly once on every exit path (main loop end, atexit
+ * after die()/exit(), signal-driven shutdown). */
 static void save_sram(void) {
     static bool sram_saved = false;
-    if (sram_saved) return; /* prevent double-save from signal + atexit */
+    if (sram_saved) return;
     sram_saved = true;
 
     void *sram = p_retro_get_memory_data(RETRO_MEMORY_SAVE_RAM);
     size_t sram_size = p_retro_get_memory_size(RETRO_MEMORY_SAVE_RAM);
     if (!sram || sram_size == 0 || g_srm_path[0] == '\0') return;
 
-    /* Ensure the save directory exists */
-    ensure_directory(g_save_dir);
-
-    FILE *f = fopen(g_srm_path, "wb");
-    if (f) {
-        fwrite(sram, 1, sram_size, f);
-        fclose(f);
-        fprintf(stderr, "[pzemu] Saved SRAM to %s (%zu bytes)\n", g_srm_path, sram_size);
-    } else {
-        fprintf(stderr, "[pzemu] Failed to save SRAM to %s\n", g_srm_path);
-    }
+    sram_write(sram, sram_size, "exit");
 }
 
 /* ---------- save state persistence ---------- */
 
-static char g_state_path[4096] = {0};
-
-static void build_state_path(const char *rom_path, const char *save_dir) {
-    const char *slash = strrchr(rom_path, '/');
-#ifdef _WIN32
-    const char *bslash = strrchr(rom_path, '\\');
-    if (bslash && (!slash || bslash > slash)) slash = bslash;
-#endif
-    const char *basename = slash ? slash + 1 : rom_path;
-
-    char name[256];
-    strncpy(name, basename, sizeof(name) - 1);
-    name[sizeof(name) - 1] = '\0';
-
-    char *dot = strrchr(name, '.');
-    if (dot) *dot = '\0';
-
-    snprintf(g_state_path, sizeof(g_state_path), "%s/%s.state", save_dir, name);
-}
+static char g_state_path[PATH_BUF] = {0};
 
 static void do_save_state(void) {
     size_t sz = p_retro_serialize_size();
@@ -597,14 +916,10 @@ static void do_save_state(void) {
 
     if (p_retro_serialize(buf, sz)) {
         ensure_directory(g_save_dir);
-        FILE *f = fopen(g_state_path, "wb");
-        if (f) {
-            fwrite(buf, 1, sz, f);
-            fclose(f);
+        if (write_file_atomic(g_state_path, buf, sz))
             fprintf(stderr, "[pzemu] Saved state to %s (%zu bytes)\n", g_state_path, sz);
-        } else {
+        else
             fprintf(stderr, "[pzemu] Failed to save state to %s\n", g_state_path);
-        }
     } else {
         fprintf(stderr, "[pzemu] retro_serialize() failed\n");
     }
@@ -612,7 +927,7 @@ static void do_save_state(void) {
 }
 
 static void do_load_state(void) {
-    FILE *f = fopen(g_state_path, "rb");
+    FILE *f = fopen_utf8(g_state_path, "rb");
     if (!f) {
         fprintf(stderr, "[pzemu] No save state found: %s\n", g_state_path);
         return;
@@ -621,6 +936,7 @@ static void do_load_state(void) {
     fseek(f, 0, SEEK_END);
     long sz = ftell(f);
     fseek(f, 0, SEEK_SET);
+    if (sz <= 0) { fclose(f); return; }
 
     void *buf = malloc((size_t)sz);
     if (!buf) { fclose(f); return; }
@@ -636,14 +952,66 @@ static void do_load_state(void) {
     free(buf);
 }
 
+/* ---------- signals ---------- */
+
 static void signal_handler(int sig) {
     (void)sig;
-    g_shutdown = true; /* let main loop exit cleanly so atexit/cleanup runs */
+    g_shutdown = 1; /* let main loop exit cleanly so SRAM is saved (no stdio in a handler) */
+}
+
+static void install_signal_handlers(void) {
+#ifdef _WIN32
+    signal(SIGTERM, signal_handler);
+    signal(SIGINT, signal_handler);
+#else
+    /* No SA_RESTART: a SIGTERM while blocked writing a frame makes fwrite fail
+     * with EINTR instead of restarting, so the loop can exit promptly. */
+    struct sigaction sa;
+    memset(&sa, 0, sizeof(sa));
+    sa.sa_handler = signal_handler;
+    sigemptyset(&sa.sa_mask);
+    sa.sa_flags = 0;
+    sigaction(SIGTERM, &sa, NULL);
+    sigaction(SIGINT, &sa, NULL);
+    signal(SIGPIPE, SIG_IGN); /* don't die on pipe close — handle in fwrite */
+#endif
+}
+
+/* ---------- time ---------- */
+
+static int64_t now_ms(void) {
+    struct timespec ts;
+    clock_gettime(CLOCK_MONOTONIC, &ts);
+    return (int64_t)ts.tv_sec * 1000 + ts.tv_nsec / 1000000;
 }
 
 /* ---------- main ---------- */
 
 int main(int argc, char *argv[]) {
+#ifdef _WIN32
+    /* #25: re-derive argv from the wide command line as UTF-8 so paths with
+     * characters outside the ANSI codepage survive. (SDL2main already does
+     * this; doing it ourselves keeps the guarantee independent of how the
+     * binary is linked.) */
+    {
+        int wargc = 0;
+        LPWSTR *wargv = CommandLineToArgvW(GetCommandLineW(), &wargc);
+        if (wargv && wargc > 0) {
+            char **u8 = (char **)calloc((size_t)wargc + 1, sizeof(char *));
+            if (u8) {
+                for (int i = 0; i < wargc; i++) {
+                    u8[i] = wide_to_utf8(wargv[i]);
+                    if (!u8[i]) u8[i] = (i < argc) ? argv[i] : (char *)"";
+                }
+                argc = wargc;
+                argv = u8;
+            }
+            /* wargv intentionally not freed — argv strings don't reference it,
+             * but the process is short-lived either way. */
+        }
+    }
+#endif
+
     if (argc < 5) {
         fprintf(stderr, "Usage: pzemu-bridge <core> <rom> <width> <height> [sys_dir] [save_dir] [port_device]\n");
         return 1;
@@ -681,8 +1049,10 @@ int main(int argc, char *argv[]) {
     if (!g_frame_out)
         die("Failed to create frame output stream");
 
-    /* --- STEP 3: Set stdin non-blocking (Linux) (AVOID.md #3) --- */
-#ifndef _WIN32
+    /* --- STEP 3: stdin: non-blocking on Linux, reader thread on Windows (AVOID.md #3) --- */
+#ifdef _WIN32
+    start_stdin_thread();
+#else
     {
         int flags = fcntl(STDIN_FILENO, F_GETFL, 0);
         if (flags != -1)
@@ -742,22 +1112,24 @@ int main(int argc, char *argv[]) {
     /* --- STEP 8: Get system info and load ROM --- */
     struct retro_system_info sys_info = {0};
     p_retro_get_system_info(&sys_info);
-    fprintf(stderr, "[pzemu] Core: %s %s\n",
+    fprintf(stderr, "[pzemu] Core: %s %s (need_fullpath=%d)\n",
             sys_info.library_name ? sys_info.library_name : "?",
-            sys_info.library_version ? sys_info.library_version : "?");
+            sys_info.library_version ? sys_info.library_version : "?",
+            (int)sys_info.need_fullpath);
 
     struct retro_game_info game_info = {0};
-    game_info.path = rom_path;
+    game_info.path = rom_path; /* UTF-8, as the libretro API requires */
     game_info.meta = NULL;
 
     void *rom_data = NULL;
     if (!sys_info.need_fullpath) {
         /* read ROM into memory */
-        FILE *f = fopen(rom_path, "rb");
+        FILE *f = fopen_utf8(rom_path, "rb");
         if (!f) die("Failed to open ROM: %s", rom_path);
         fseek(f, 0, SEEK_END);
         long size = ftell(f);
         fseek(f, 0, SEEK_SET);
+        if (size <= 0) die("Empty or unreadable ROM: %s", rom_path);
         rom_data = malloc((size_t)size);
         if (!rom_data) die("Failed to allocate %ld bytes for ROM", size);
         if (fread(rom_data, 1, (size_t)size, f) != (size_t)size)
@@ -791,18 +1163,14 @@ int main(int argc, char *argv[]) {
     p_retro_set_controller_port_device(0, g_port_device);
     fprintf(stderr, "[pzemu] Controller port device: %u\n", g_port_device);
 
-    /* --- STEP 11: Load SRAM + register signal handlers --- */
-    build_srm_path(rom_path, g_save_dir);
-    build_state_path(rom_path, g_save_dir);
+    /* --- STEP 11: Load SRAM + register exit/signal handlers --- */
+    build_save_path(g_srm_path,   sizeof(g_srm_path),   rom_path, g_save_dir, ".srm");
+    build_save_path(g_state_path, sizeof(g_state_path), rom_path, g_save_dir, ".state");
     load_sram();
 
-    /* Save SRAM on any exit path (signal, pipe close, clean shutdown) */
+    /* Save SRAM on any exit path (signal, pipe close, QUIT, die() after this point) */
     atexit(save_sram);
-    signal(SIGTERM, signal_handler);
-    signal(SIGINT, signal_handler);
-#ifndef _WIN32
-    signal(SIGPIPE, SIG_IGN); /* don't die on pipe close — handle in fwrite */
-#endif
+    install_signal_handlers();
 
     /* --- STEP 12: Initialize SDL2 audio (audio-only, no window) --- */
     if (SDL_Init(SDL_INIT_AUDIO) < 0) {
@@ -829,14 +1197,16 @@ int main(int argc, char *argv[]) {
     double frame_ns = 1000000000.0 / av_info.timing.fps; /* ~16.6ms for NTSC */
     struct timespec next_frame;
     clock_gettime(CLOCK_MONOTONIC, &next_frame);
+    int64_t next_sram_flush = now_ms() + SRAM_FLUSH_INTERVAL_MS;
 
     while (!g_shutdown) {
         if (g_paused) {
-            poll_stdin_keys();
+            poll_stdin_keys(); /* QUIT / PAUSE OFF / EOF still processed while paused */
             SDL_Delay(16);
             clock_gettime(CLOCK_MONOTONIC, &next_frame); /* reset on unpause */
         } else {
             p_retro_run();
+            if (g_shutdown) break;
 
             /* Advance target time by one frame (accumulator-style, no drift) */
             next_frame.tv_nsec += (long)frame_ns;
@@ -858,6 +1228,12 @@ int main(int argc, char *argv[]) {
                 clock_gettime(CLOCK_MONOTONIC, &next_frame);
             }
         }
+
+        /* Periodic SRAM flush — between frames only, and only when it changed */
+        if (now_ms() >= next_sram_flush) {
+            flush_sram_if_changed();
+            next_sram_flush = now_ms() + SRAM_FLUSH_INTERVAL_MS;
+        }
     }
 
     /* --- STEP 14: Cleanup --- */
@@ -875,12 +1251,21 @@ int main(int argc, char *argv[]) {
     SDL_Quit();
 
     free(g_rgba_buf);
+    free(g_audio_scratch);
+    free(g_sram_shadow);
     for (int i = 0; i < g_vars_count; i++) {
         free(g_vars[i].key);
         free(g_vars[i].value);
     }
 
-    if (g_frame_out) fclose(g_frame_out);
+    if (g_frame_out) {
+#ifndef _WIN32
+        /* never block on a stalled frame pipe while exiting — leftover bytes are useless now */
+        int fl = fcntl(fileno(g_frame_out), F_GETFL, 0);
+        if (fl != -1) fcntl(fileno(g_frame_out), F_SETFL, fl | O_NONBLOCK);
+#endif
+        fclose(g_frame_out);
+    }
 
     return 0;
 }

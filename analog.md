@@ -16,13 +16,19 @@ Three files change. PZFB stays untouched.
 
 PZFB's `gameSendInput(keycode, pressed)` writes 2 bytes: `[pressed, keycode]`. Both bytes are masked with `& 0xFF` and have no validation, so we can repurpose unused keycode values:
 
-| Keycode | Meaning | `pressed` byte |
+| Keycode | Meaning | `pressed`/value byte |
 |---|---|---|
-| 0-15 | libretro digital button (existing) | 0 = release, 1 = press |
-| 16-18 | meta-commands (existing: save state, load state, pause) | 1 on press only |
-| 64-67 | analog axis update (new): leftX, leftY, rightX, rightY | quantized signed value (0=full negative, 128=center, 255=full positive) |
+| 0-15 | libretro digital button | 0 = release, 1 = press |
+| 16 / 17 | save state / load state | any non-zero |
+| 18 | pause toggle (legacy) | any non-zero |
+| 19 / 20 | PAUSE ON / PAUSE OFF (idempotent; 0.8.0) | any non-zero |
+| 21 | QUIT — flush SRAM, exit cleanly (0.8.0) | any non-zero |
+| 64-67 | analog axis update: leftX, leftY, rightX, rightY | quantized signed value (0=full negative, 128=center, 255=full positive) |
+| 68 | VOLUME (0.8.0) | linear gain 0..255 (gain = value/255, 0 = mute; bridge default 255) |
 
-Keycodes 19-63 and 68-255 remain unused and reserved for future use.
+Keycodes 22-63 and 69-255 remain unused and reserved for future use. stdin EOF / broken pipe, a failed frame write, SIGTERM/SIGINT and `RETRO_ENVIRONMENT_SHUTDOWN` all behave like QUIT (see the header comment of `bridge/pzemu-bridge.c`).
+
+> **Status (0.8.0):** everything in this guide is already in the shipped bridge and Lua (analog since 0.7.0; 19/20/21/68 since 0.8.0). The step-by-step below is kept as the how-to for adding analog-capable consoles (PSX/PSP/N64 cores) yourself; the code listings in Steps 1–4 and 6–8 show the 0.7.0 state and are **stale** in detail — the current `handle_key_event` also handles 19/20/21/68, `set_paused()`/`request_quit()`/`set_volume()` exist, and the Lua now uses `PZEMUGame.META_*` constants. Read `bridge/pzemu-bridge.c` for the current bodies.
 
 8-bit quantization is exact for PSX/PSP — both consoles use 8-bit analog values natively (DualShock and PSP analog stick), so no precision is lost relative to the original hardware.
 
@@ -61,6 +67,8 @@ static unsigned g_port_device = RETRO_DEVICE_JOYPAD;
 ---
 
 ## Step 2 — Bridge: decode axis events from stdin
+
+> **Stale listing (0.7.0).** The shipped 0.8.0 `handle_key_event` (around lines 514–546 of `bridge/pzemu-bridge.c`) additionally handles keycode 68 *before* the press-only switch (the value byte is the gain) and keycodes 19/20/21 inside it (`set_paused(true/false, ...)`, `request_quit("QUIT command")`). Don't paste the body below over it — it is only here to show where the analog decode sits.
 
 Replace the entire `handle_key_event` function (around line 330) with:
 
